@@ -19,3 +19,8 @@ description = "A modular text editor with core and UI components"
 icedit-core = { path = "core" }
 icedit-ui = { path = "ui" }
 crossterm = { workspace = true }
+iced = { version = "0.13", features = ["canvas", "advanced"] }
+
+[[example]]
+name = "iced_editor"
+required-features = []

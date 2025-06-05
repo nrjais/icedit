@@ -1,10 +1,12 @@
 pub mod shortcuts;
+pub mod widget;
 
 // Re-export core types for convenience
 pub use icedit_core::*;
 
 // Export UI-specific types
 pub use shortcuts::{KeyBinding, Shortcut, ShortcutManager};
+pub use widget::*;
 
 /// UI Editor that combines core editor with shortcut management
 pub struct UIEditor {
