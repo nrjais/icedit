@@ -8,7 +8,7 @@ pub mod shortcuts;
 
 pub use buffer::Buffer;
 pub use cursor::{Cursor, Position};
-pub use editor::Editor;
+pub use editor::{Editor, Viewport};
 pub use keys::{Key, KeyEvent, Modifiers, NamedKey};
 pub use messages::{CursorMovement, EditorEvent, EditorMessage, EditorResponse};
 pub use selection::Selection;

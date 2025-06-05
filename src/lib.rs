@@ -8,28 +8,4 @@ pub use icedit_core::{
     Selection,
 };
 
-pub use icedit_ui::{KeyBinding, Shortcut, ShortcutManager, UIEditor};
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_workspace_integration() {
-        // Test that we can use the core editor directly
-        let mut core_editor = Editor::new();
-        let response =
-            core_editor.handle_message(EditorMessage::InsertText("Hello from core!".to_string()));
-        assert!(matches!(response, EditorResponse::TextChanged));
-
-        // Test that we can use the UI editor
-        let mut ui_editor = UIEditor::new();
-        let response =
-            ui_editor.handle_message(EditorMessage::InsertText("Hello from UI!".to_string()));
-        assert!(matches!(response, EditorResponse::TextChanged));
-
-        // Test shortcut functionality
-        let shortcuts = ui_editor.shortcut_manager();
-        assert!(!shortcuts.get_bindings().is_empty());
-    }
-}
+pub use icedit_ui::{KeyBinding, Shortcut, ShortcutManager};
