@@ -15,6 +15,9 @@ pub enum EditorMessage {
     MoveCursor(CursorMovement),
     MoveCursorTo(Position),
 
+    // Cursor movement with selection handling
+    MoveCursorWithSelection(CursorMovement, bool), // movement, extend_selection
+
     // Selection
     StartSelection,
     EndSelection,

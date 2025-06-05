@@ -162,44 +162,55 @@ impl<'a, Message> EditorWidget<'a, Message> {
             }
         }
 
-        // If not found in visible lines, calculate based on line height
+        // If not found in visible lines, calculate based on line height and viewport scroll
         // This is a fallback for lines that might not be visible
-        line_index as f32 * self.line_height
+        let viewport = self.editor.viewport();
+        line_index as f32 * self.line_height - viewport.scroll_offset.1
     }
 
     fn position_to_point(&self, position: Position) -> Point {
         let viewport = self.editor.viewport();
 
         // Calculate x position by measuring actual character widths
-        let x_pos =
-            if let Some(line_rope) = self.editor.current_buffer().rope().get_line(position.line) {
-                let line_str = line_rope.to_string();
-                let line_content = line_str.trim_end_matches('\n');
+        let x_pos = if let Some(line_rope) =
+            self.editor.current_buffer().rope().get_line(position.line)
+        {
+            let line_str = line_rope.to_string();
+            let line_content = line_str.trim_end_matches('\n');
 
-                let mut pixel_pos = 0.0;
-                let mut char_count = 0;
+            let mut pixel_pos = 0.0;
+            let mut char_count = 0;
 
-                for ch in line_content.chars() {
-                    if char_count >= position.column {
-                        break;
-                    }
-
-                    let char_width = if ch == '\t' {
-                        // Tab width is typically 4 or 8 characters
-                        self.char_width * 4.0
-                    } else {
-                        self.char_width
-                    };
-
-                    pixel_pos += char_width;
-                    char_count += 1;
+            // Allow positioning at the end of the line (after last character)
+            for ch in line_content.chars() {
+                if char_count >= position.column {
+                    break;
                 }
 
-                pixel_pos
-            } else {
-                // Invalid line, position at start
-                0.0
-            };
+                let char_width = if ch == '\t' {
+                    // Tab width is typically 4 or 8 characters
+                    self.char_width * 4.0
+                } else {
+                    self.char_width
+                };
+
+                pixel_pos += char_width;
+                char_count += 1;
+            }
+
+            // If position.column is at or beyond the end of line, position after the last character
+            if position.column >= line_content.chars().count() {
+                // Continue to position after last character
+                while char_count < position.column && char_count < line_content.chars().count() {
+                    char_count += 1;
+                }
+            }
+
+            pixel_pos
+        } else {
+            // Invalid line, position at start
+            0.0
+        };
 
         // Use the same line positioning logic as the text renderer
         let y_pos = self.get_line_y_position(position.line);
@@ -246,7 +257,8 @@ impl<'a, Message> EditorWidget<'a, Message> {
         };
 
         // Calculate initial column based on x position
-        let raw_column = ((point.x + viewport.scroll_offset.0) / self.char_width).max(0.0) as usize;
+        let _raw_column =
+            ((point.x + viewport.scroll_offset.0) / self.char_width).max(0.0) as usize;
 
         // Clamp to valid buffer bounds
         let buffer = self.editor.current_buffer();
@@ -287,7 +299,15 @@ impl<'a, Message> EditorWidget<'a, Message> {
 
                 // Convert byte position to character position
                 let char_column = line_content[..char_pos].chars().count();
-                char_column.min(line_length)
+
+                // Allow positioning beyond the end of the line for selection purposes
+                let click_x = point.x + viewport.scroll_offset.0;
+                if click_x > pixel_pos {
+                    // Clicked beyond the last character, position at end of line + 1
+                    line_length
+                } else {
+                    char_column.min(line_length)
+                }
             }
         } else {
             // Invalid line, position at start
@@ -431,42 +451,68 @@ where
                     self.selection_color,
                 );
             } else {
-                // Multi-line selection - use partial line information for proper clipping
-                for (_line_content, partial_line) in &visible_lines_with_partial {
-                    let line_idx = partial_line.line_index;
-                    if line_idx >= selection.start.line && line_idx <= selection.end.line {
-                        let (start_x, end_x) = if line_idx == selection.start.line {
-                            (
-                                selection.start.column as f32 * self.char_width,
-                                bounds.width,
-                            )
-                        } else if line_idx == selection.end.line {
-                            (0.0, selection.end.column as f32 * self.char_width)
-                        } else {
-                            (0.0, bounds.width)
-                        };
+                // Multi-line selection - render all selected lines that are visible or partially visible
+                let viewport = self.editor.viewport();
 
-                        // Calculate the visible portion of the selection for this line
-                        let line_y = bounds.y + partial_line.y_offset;
-                        let visible_height =
-                            self.line_height - partial_line.clip_top - partial_line.clip_bottom;
-                        let selection_y = line_y + partial_line.clip_top;
+                // Calculate which lines are within the selection range and also within the viewport
+                for line_idx in selection.start.line..=selection.end.line {
+                    // Use the same line positioning logic as text rendering
+                    let line_y = self.get_line_y_position(line_idx);
 
-                        let selection_bounds = Rectangle::new(
-                            Point::new(
-                                start_x + bounds.x - self.editor.viewport().scroll_offset.0,
-                                selection_y,
-                            ),
-                            Size::new(end_x - start_x, visible_height),
-                        );
-                        renderer.fill_quad(
-                            Quad {
-                                bounds: selection_bounds,
-                                border: iced::Border::default(),
-                                shadow: iced::Shadow::default(),
-                            },
-                            self.selection_color,
-                        );
+                    // Only draw if the line is at least partially visible in the viewport
+                    if line_y + self.line_height > 0.0 && line_y < bounds.height {
+                        // Calculate x positions using the same logic as position_to_point for consistency
+                        let (start_x, end_x) =
+                            if line_idx == selection.start.line && line_idx == selection.end.line {
+                                // Single line within multi-line selection (shouldn't happen, but handle it)
+                                let start_pos = self.position_to_point(selection.start).x
+                                    + viewport.scroll_offset.0;
+                                let end_pos = self.position_to_point(selection.end).x
+                                    + viewport.scroll_offset.0;
+                                (start_pos, end_pos)
+                            } else if line_idx == selection.start.line {
+                                let start_pos = self.position_to_point(selection.start).x
+                                    + viewport.scroll_offset.0;
+                                (start_pos, bounds.width + viewport.scroll_offset.0)
+                            } else if line_idx == selection.end.line {
+                                let end_pos = self.position_to_point(selection.end).x
+                                    + viewport.scroll_offset.0;
+                                (0.0, end_pos)
+                            } else {
+                                (0.0, bounds.width + viewport.scroll_offset.0)
+                            };
+
+                        // Ensure we don't render empty or negative width selections
+                        if start_x < end_x {
+                            // Calculate clipping for partially visible lines
+                            let clip_top = if line_y < 0.0 { -line_y } else { 0.0 };
+                            let clip_bottom = if line_y + self.line_height > bounds.height {
+                                (line_y + self.line_height) - bounds.height
+                            } else {
+                                0.0
+                            };
+
+                            let visible_height = self.line_height - clip_top - clip_bottom;
+                            let selection_y = bounds.y + line_y + clip_top;
+
+                            if visible_height > 0.0 {
+                                let selection_bounds = Rectangle::new(
+                                    Point::new(
+                                        start_x + bounds.x - viewport.scroll_offset.0,
+                                        selection_y,
+                                    ),
+                                    Size::new(end_x - start_x, visible_height),
+                                );
+                                renderer.fill_quad(
+                                    Quad {
+                                        bounds: selection_bounds,
+                                        border: iced::Border::default(),
+                                        shadow: iced::Shadow::default(),
+                                    },
+                                    self.selection_color,
+                                );
+                            }
+                        }
                     }
                 }
             }

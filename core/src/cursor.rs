@@ -24,18 +24,17 @@ impl Position {
 
         let line_start = rope.line_to_byte(self.line);
         let line = rope.line(self.line);
-        // Allow cursor to be at the end of the line (after the last character)
-        let max_column = if line.len_chars() > 0 && line.char(line.len_chars() - 1) == '\n' {
-            line.len_chars() - 1 // Don't count the newline
-        } else {
-            line.len_chars() // Allow cursor at end of line
-        };
+        // Allow cursor to be anywhere in the line, including after the last character
+        // and even at the newline position for selection purposes
+        let max_column = line.len_chars();
         let column_chars = std::cmp::min(self.column, max_column);
 
         // Convert character offset to byte offset within the line
         let line_slice = rope.line(self.line);
         let column_bytes = if column_chars == 0 {
             0
+        } else if column_chars >= line_slice.len_chars() {
+            line_slice.len_bytes()
         } else {
             line_slice.char_to_byte(column_chars)
         };
@@ -87,7 +86,12 @@ impl Cursor {
         self.position.line -= 1;
 
         let line = rope.line(self.position.line);
-        let line_len = line.len_chars().saturating_sub(1); // Exclude newline
+        // Allow cursor to be at the end of line content, excluding only the newline for movement
+        let line_len = if line.len_chars() > 0 && line.char(line.len_chars() - 1) == '\n' {
+            line.len_chars() - 1
+        } else {
+            line.len_chars()
+        };
         self.position.column = std::cmp::min(desired_col, line_len);
 
         true
@@ -102,7 +106,12 @@ impl Cursor {
         self.position.line += 1;
 
         let line = rope.line(self.position.line);
-        let line_len = line.len_chars().saturating_sub(1); // Exclude newline
+        // Allow cursor to be at the end of line content, excluding only the newline for movement
+        let line_len = if line.len_chars() > 0 && line.char(line.len_chars() - 1) == '\n' {
+            line.len_chars() - 1
+        } else {
+            line.len_chars()
+        };
         self.position.column = std::cmp::min(desired_col, line_len);
 
         true
@@ -116,7 +125,13 @@ impl Cursor {
         } else if self.position.line > 0 {
             self.position.line -= 1;
             let line = rope.line(self.position.line);
-            self.position.column = line.len_chars().saturating_sub(1);
+            // Move to the end of the previous line content, excluding newline
+            self.position.column =
+                if line.len_chars() > 0 && line.char(line.len_chars() - 1) == '\n' {
+                    line.len_chars() - 1
+                } else {
+                    line.len_chars()
+                };
             self.desired_column = Some(self.position.column);
             true
         } else {
@@ -126,7 +141,12 @@ impl Cursor {
 
     pub fn move_right(&mut self, rope: &Rope) -> bool {
         let line = rope.line(self.position.line);
-        let line_len = line.len_chars().saturating_sub(1); // Exclude newline
+        // Allow moving to the end of line content, excluding newline for cursor movement
+        let line_len = if line.len_chars() > 0 && line.char(line.len_chars() - 1) == '\n' {
+            line.len_chars() - 1
+        } else {
+            line.len_chars()
+        };
 
         if self.position.column < line_len {
             self.position.column += 1;
@@ -149,7 +169,12 @@ impl Cursor {
 
     pub fn move_to_line_end(&mut self, rope: &Rope) {
         let line = rope.line(self.position.line);
-        self.position.column = line.len_chars().saturating_sub(1);
+        // Move to the end of line content, excluding newline
+        self.position.column = if line.len_chars() > 0 && line.char(line.len_chars() - 1) == '\n' {
+            line.len_chars() - 1
+        } else {
+            line.len_chars()
+        };
         self.desired_column = Some(self.position.column);
     }
 
@@ -162,7 +187,13 @@ impl Cursor {
         if rope.len_lines() > 0 {
             self.position.line = rope.len_lines() - 1;
             let line = rope.line(self.position.line);
-            self.position.column = line.len_chars().saturating_sub(1);
+            // Move to the end of the last line content, excluding newline
+            self.position.column =
+                if line.len_chars() > 0 && line.char(line.len_chars() - 1) == '\n' {
+                    line.len_chars() - 1
+                } else {
+                    line.len_chars()
+                };
         } else {
             self.position = Position::zero();
         }

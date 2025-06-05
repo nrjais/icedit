@@ -323,6 +323,9 @@ impl Editor {
 
             EditorMessage::MoveCursor(movement) => self.handle_cursor_movement(movement),
             EditorMessage::MoveCursorTo(position) => self.handle_move_cursor_to(position),
+            EditorMessage::MoveCursorWithSelection(movement, extend_selection) => {
+                self.handle_cursor_movement_with_selection(movement, extend_selection)
+            }
 
             EditorMessage::StartSelection => self.handle_start_selection(),
             EditorMessage::EndSelection => self.handle_end_selection(),
@@ -393,6 +396,19 @@ impl Editor {
     }
 
     fn handle_delete_char(&mut self) -> EditorResponse {
+        // If there's a selection, delete it instead of single character
+        if let Some(selection) = self.selection.take() {
+            if !selection.is_empty() {
+                match self.buffer.delete_selection(&selection, &mut self.cursor) {
+                    Ok(_) => {
+                        self.ensure_cursor_visible();
+                        return EditorResponse::Success;
+                    }
+                    Err(e) => return EditorResponse::Error(e.to_string()),
+                }
+            }
+        }
+
         let position = self.cursor.position();
         match self.buffer.delete_char(position, &mut self.cursor) {
             Ok(_) => {
@@ -404,6 +420,19 @@ impl Editor {
     }
 
     fn handle_delete_char_backward(&mut self) -> EditorResponse {
+        // If there's a selection, delete it instead of single character
+        if let Some(selection) = self.selection.take() {
+            if !selection.is_empty() {
+                match self.buffer.delete_selection(&selection, &mut self.cursor) {
+                    Ok(_) => {
+                        self.ensure_cursor_visible();
+                        return EditorResponse::Success;
+                    }
+                    Err(e) => return EditorResponse::Error(e.to_string()),
+                }
+            }
+        }
+
         let position = self.cursor.position();
         match self.buffer.delete_char_backward(position, &mut self.cursor) {
             Ok(_) => {
@@ -484,18 +513,136 @@ impl Editor {
         };
 
         if moved {
+            // Clear any existing selection when moving cursor without extending selection
+            let selection_cleared = self.selection.is_some();
+            if selection_cleared {
+                self.selection = None;
+            }
+
             self.ensure_cursor_visible();
             let position = self.cursor.position();
-            EditorResponse::CursorMoved(position)
+
+            // Return appropriate response based on whether selection was cleared
+            if selection_cleared {
+                EditorResponse::SelectionChanged(None)
+            } else {
+                EditorResponse::CursorMoved(position)
+            }
         } else {
             EditorResponse::Success
         }
     }
 
     fn handle_move_cursor_to(&mut self, position: Position) -> EditorResponse {
+        // Clear any existing selection when moving cursor to a specific position
+        let selection_cleared = self.selection.is_some();
+        if selection_cleared {
+            self.selection = None;
+        }
+
         self.cursor.set_position(position);
         self.ensure_cursor_visible();
-        EditorResponse::CursorMoved(position)
+
+        // Return appropriate response based on whether selection was cleared
+        if selection_cleared {
+            EditorResponse::SelectionChanged(None)
+        } else {
+            EditorResponse::CursorMoved(position)
+        }
+    }
+
+    fn handle_cursor_movement_with_selection(
+        &mut self,
+        movement: CursorMovement,
+        extend_selection: bool,
+    ) -> EditorResponse {
+        let rope = self.buffer.rope();
+        let initial_position = self.cursor.position();
+
+        // Track the anchor point for selection extension
+        let selection_anchor = if extend_selection {
+            if let Some(ref selection) = self.selection {
+                // If cursor is at the start of selection, anchor is the end and vice versa
+                if initial_position == selection.start {
+                    selection.end
+                } else {
+                    selection.start
+                }
+            } else {
+                // Starting a new selection, anchor is the current position
+                initial_position
+            }
+        } else {
+            initial_position
+        };
+
+        // If we're starting a selection and don't have one yet
+        if extend_selection && self.selection.is_none() {
+            self.selection = Some(Selection::new(initial_position, initial_position));
+        }
+
+        let moved = match movement {
+            CursorMovement::Up => self.cursor.move_up(rope),
+            CursorMovement::Down => self.cursor.move_down(rope),
+            CursorMovement::Left => self.cursor.move_left(rope),
+            CursorMovement::Right => self.cursor.move_right(rope),
+            CursorMovement::WordLeft => self.cursor.move_word_left(rope),
+            CursorMovement::WordRight => self.cursor.move_word_right(rope),
+            CursorMovement::LineStart => {
+                self.cursor.move_to_line_start();
+                true
+            }
+            CursorMovement::LineEnd => {
+                self.cursor.move_to_line_end(rope);
+                true
+            }
+            CursorMovement::DocumentStart => {
+                self.cursor.move_to_document_start();
+                true
+            }
+            CursorMovement::DocumentEnd => {
+                self.cursor.move_to_document_end(rope);
+                true
+            }
+            CursorMovement::PageUp => {
+                for _ in 0..20 {
+                    if !self.cursor.move_up(rope) {
+                        break;
+                    }
+                }
+                true
+            }
+            CursorMovement::PageDown => {
+                for _ in 0..20 {
+                    if !self.cursor.move_down(rope) {
+                        break;
+                    }
+                }
+                true
+            }
+        };
+
+        if moved {
+            self.ensure_cursor_visible();
+            let new_position = self.cursor.position();
+
+            if extend_selection {
+                // Update selection to include new cursor position
+                if let Some(ref mut selection) = self.selection {
+                    // Use the proper anchor point for selection extension
+                    *selection = Selection::from_positions(selection_anchor, new_position);
+                }
+                EditorResponse::SelectionChanged(self.selection.clone())
+            } else {
+                // Clear selection if not extending
+                if self.selection.is_some() {
+                    self.selection = None;
+                }
+                EditorResponse::CursorMoved(new_position)
+            }
+        } else {
+            EditorResponse::Success
+        }
     }
 
     // Selection handlers

@@ -259,6 +259,31 @@ impl ShortcutManager {
             "Move cursor right",
         ));
 
+        // Selection with Shift
+        self.bind(KeyBinding::new(
+            Shortcut::shift(Key::Named(NamedKey::ArrowUp)),
+            EditorMessage::MoveCursorWithSelection(CursorMovement::Up, true),
+            "Select up",
+        ));
+
+        self.bind(KeyBinding::new(
+            Shortcut::shift(Key::Named(NamedKey::ArrowDown)),
+            EditorMessage::MoveCursorWithSelection(CursorMovement::Down, true),
+            "Select down",
+        ));
+
+        self.bind(KeyBinding::new(
+            Shortcut::shift(Key::Named(NamedKey::ArrowLeft)),
+            EditorMessage::MoveCursorWithSelection(CursorMovement::Left, true),
+            "Select left",
+        ));
+
+        self.bind(KeyBinding::new(
+            Shortcut::shift(Key::Named(NamedKey::ArrowRight)),
+            EditorMessage::MoveCursorWithSelection(CursorMovement::Right, true),
+            "Select right",
+        ));
+
         // Word movement
         self.bind(KeyBinding::new(
             Shortcut::ctrl(Key::Named(NamedKey::ArrowLeft)),
@@ -270,6 +295,19 @@ impl ShortcutManager {
             Shortcut::ctrl(Key::Named(NamedKey::ArrowRight)),
             EditorMessage::MoveCursor(CursorMovement::WordRight),
             "Move cursor to next word",
+        ));
+
+        // Word selection
+        self.bind(KeyBinding::new(
+            Shortcut::ctrl_shift(Key::Named(NamedKey::ArrowLeft)),
+            EditorMessage::MoveCursorWithSelection(CursorMovement::WordLeft, true),
+            "Select to previous word",
+        ));
+
+        self.bind(KeyBinding::new(
+            Shortcut::ctrl_shift(Key::Named(NamedKey::ArrowRight)),
+            EditorMessage::MoveCursorWithSelection(CursorMovement::WordRight, true),
+            "Select to next word",
         ));
 
         // Line movement
@@ -285,6 +323,19 @@ impl ShortcutManager {
             "Move cursor to line end",
         ));
 
+        // Line selection
+        self.bind(KeyBinding::new(
+            Shortcut::shift(Key::Named(NamedKey::Home)),
+            EditorMessage::MoveCursorWithSelection(CursorMovement::LineStart, true),
+            "Select to line start",
+        ));
+
+        self.bind(KeyBinding::new(
+            Shortcut::shift(Key::Named(NamedKey::End)),
+            EditorMessage::MoveCursorWithSelection(CursorMovement::LineEnd, true),
+            "Select to line end",
+        ));
+
         // Document movement
         self.bind(KeyBinding::new(
             Shortcut::ctrl(Key::Named(NamedKey::Home)),
@@ -296,6 +347,19 @@ impl ShortcutManager {
             Shortcut::ctrl(Key::Named(NamedKey::End)),
             EditorMessage::MoveCursor(CursorMovement::DocumentEnd),
             "Move cursor to document end",
+        ));
+
+        // Document selection
+        self.bind(KeyBinding::new(
+            Shortcut::ctrl_shift(Key::Named(NamedKey::Home)),
+            EditorMessage::MoveCursorWithSelection(CursorMovement::DocumentStart, true),
+            "Select to document start",
+        ));
+
+        self.bind(KeyBinding::new(
+            Shortcut::ctrl_shift(Key::Named(NamedKey::End)),
+            EditorMessage::MoveCursorWithSelection(CursorMovement::DocumentEnd, true),
+            "Select to document end",
         ));
 
         // Page movement
@@ -311,7 +375,20 @@ impl ShortcutManager {
             "Move cursor page down",
         ));
 
-        // Deletion
+        // Page selection
+        self.bind(KeyBinding::new(
+            Shortcut::shift(Key::Named(NamedKey::PageUp)),
+            EditorMessage::MoveCursorWithSelection(CursorMovement::PageUp, true),
+            "Select page up",
+        ));
+
+        self.bind(KeyBinding::new(
+            Shortcut::shift(Key::Named(NamedKey::PageDown)),
+            EditorMessage::MoveCursorWithSelection(CursorMovement::PageDown, true),
+            "Select page down",
+        ));
+
+        // Basic deletion
         self.bind(KeyBinding::new(
             Shortcut::new(Key::Named(NamedKey::Delete), Modifiers::new()),
             EditorMessage::DeleteChar,
@@ -324,13 +401,45 @@ impl ShortcutManager {
             "Delete character backward",
         ));
 
+        // Word deletion
+        self.bind(KeyBinding::new(
+            Shortcut::ctrl(Key::Named(NamedKey::Delete)),
+            EditorMessage::Command("delete_word_forward".to_string(), vec![]),
+            "Delete word forward",
+        ));
+
+        self.bind(KeyBinding::new(
+            Shortcut::ctrl(Key::Named(NamedKey::Backspace)),
+            EditorMessage::Command("delete_word_backward".to_string(), vec![]),
+            "Delete word backward",
+        ));
+
+        // Line operations
         self.bind(KeyBinding::new(
             Shortcut::ctrl(Key::Character('k')),
             EditorMessage::DeleteLine,
             "Delete line",
         ));
 
-        // Selection
+        self.bind(KeyBinding::new(
+            Shortcut::ctrl_shift(Key::Character('k')),
+            EditorMessage::DeleteLine,
+            "Delete line (Visual Studio style)",
+        ));
+
+        self.bind(KeyBinding::new(
+            Shortcut::ctrl(Key::Character('d')),
+            EditorMessage::Command("duplicate_line".to_string(), vec![]),
+            "Duplicate line",
+        ));
+
+        self.bind(KeyBinding::new(
+            Shortcut::ctrl_shift(Key::Character('d')),
+            EditorMessage::Command("duplicate_line".to_string(), vec![]),
+            "Duplicate line (alternative)",
+        ));
+
+        // Selection operations
         self.bind(KeyBinding::new(
             Shortcut::ctrl(Key::Character('a')),
             EditorMessage::SelectAll,
@@ -341,6 +450,12 @@ impl ShortcutManager {
             Shortcut::ctrl(Key::Character('l')),
             EditorMessage::SelectLine,
             "Select line",
+        ));
+
+        self.bind(KeyBinding::new(
+            Shortcut::ctrl(Key::Character('w')),
+            EditorMessage::SelectWord,
+            "Select word",
         ));
 
         self.bind(KeyBinding::new(
@@ -368,6 +483,7 @@ impl ShortcutManager {
             "Redo (alternative)",
         ));
 
+        // Clipboard operations
         self.bind(KeyBinding::new(
             Shortcut::ctrl(Key::Character('x')),
             EditorMessage::Cut,
@@ -386,7 +502,14 @@ impl ShortcutManager {
             "Paste",
         ));
 
-        // Search
+        // Advanced clipboard
+        self.bind(KeyBinding::new(
+            Shortcut::ctrl_shift(Key::Character('v')),
+            EditorMessage::Command("paste_special".to_string(), vec![]),
+            "Paste special",
+        ));
+
+        // Search and replace
         self.bind(KeyBinding::new(
             Shortcut::ctrl(Key::Character('f')),
             EditorMessage::Find("".to_string()),
@@ -411,8 +534,79 @@ impl ShortcutManager {
             "Replace",
         ));
 
+        self.bind(KeyBinding::new(
+            Shortcut::ctrl(Key::Character('g')),
+            EditorMessage::Command("goto_line".to_string(), vec![]),
+            "Go to line",
+        ));
+
+        // Advanced search
+        self.bind(KeyBinding::new(
+            Shortcut::ctrl_shift(Key::Character('f')),
+            EditorMessage::Command("find_in_files".to_string(), vec![]),
+            "Find in files",
+        ));
+
+        self.bind(KeyBinding::new(
+            Shortcut::ctrl_shift(Key::Character('h')),
+            EditorMessage::Command("replace_in_files".to_string(), vec![]),
+            "Replace in files",
+        ));
+
+        // Indentation
+        self.bind(KeyBinding::new(
+            Shortcut::new(Key::Named(NamedKey::Tab), Modifiers::new()),
+            EditorMessage::Command("indent".to_string(), vec![]),
+            "Indent",
+        ));
+
+        self.bind(KeyBinding::new(
+            Shortcut::shift(Key::Named(NamedKey::Tab)),
+            EditorMessage::Command("unindent".to_string(), vec![]),
+            "Unindent",
+        ));
+
+        self.bind(KeyBinding::new(
+            Shortcut::ctrl(Key::Named(NamedKey::Tab)),
+            EditorMessage::Command("next_tab".to_string(), vec![]),
+            "Next tab",
+        ));
+
+        self.bind(KeyBinding::new(
+            Shortcut::ctrl_shift(Key::Named(NamedKey::Tab)),
+            EditorMessage::Command("previous_tab".to_string(), vec![]),
+            "Previous tab",
+        ));
+
+        // Comment operations
+        self.bind(KeyBinding::new(
+            Shortcut::ctrl(Key::Character('/')),
+            EditorMessage::Command("toggle_comment".to_string(), vec![]),
+            "Toggle line comment",
+        ));
+
+        self.bind(KeyBinding::new(
+            Shortcut::ctrl_shift(Key::Character('/')),
+            EditorMessage::Command("toggle_block_comment".to_string(), vec![]),
+            "Toggle block comment",
+        ));
+
+        // Formatting
+        self.bind(KeyBinding::new(
+            Shortcut::ctrl_shift(Key::Character('i')),
+            EditorMessage::Command("format_document".to_string(), vec![]),
+            "Format document",
+        ));
+
+        self.bind(KeyBinding::new(
+            Shortcut::ctrl(Key::Character('i')),
+            EditorMessage::Command("format_selection".to_string(), vec![]),
+            "Format selection",
+        ));
+
         // macOS specific bindings
         if cfg!(target_os = "macos") {
+            // Basic movement with Cmd key (Super)
             self.bind(KeyBinding::new(
                 Shortcut::new(
                     Key::Named(NamedKey::ArrowLeft),
@@ -445,6 +639,188 @@ impl ShortcutManager {
                 EditorMessage::MoveCursor(CursorMovement::DocumentEnd),
                 "Move to document end (macOS)",
             ));
+
+            // Selection with Cmd+Shift
+            self.bind(KeyBinding::new(
+                Shortcut::new(
+                    Key::Named(NamedKey::ArrowLeft),
+                    Modifiers::new().super_key().shift(),
+                ),
+                EditorMessage::MoveCursorWithSelection(CursorMovement::LineStart, true),
+                "Select to line start (macOS)",
+            ));
+
+            self.bind(KeyBinding::new(
+                Shortcut::new(
+                    Key::Named(NamedKey::ArrowRight),
+                    Modifiers::new().super_key().shift(),
+                ),
+                EditorMessage::MoveCursorWithSelection(CursorMovement::LineEnd, true),
+                "Select to line end (macOS)",
+            ));
+
+            self.bind(KeyBinding::new(
+                Shortcut::new(
+                    Key::Named(NamedKey::ArrowUp),
+                    Modifiers::new().super_key().shift(),
+                ),
+                EditorMessage::MoveCursorWithSelection(CursorMovement::DocumentStart, true),
+                "Select to document start (macOS)",
+            ));
+
+            self.bind(KeyBinding::new(
+                Shortcut::new(
+                    Key::Named(NamedKey::ArrowDown),
+                    Modifiers::new().super_key().shift(),
+                ),
+                EditorMessage::MoveCursorWithSelection(CursorMovement::DocumentEnd, true),
+                "Select to document end (macOS)",
+            ));
+
+            // macOS specific clipboard shortcuts (Cmd instead of Ctrl)
+            self.bind(KeyBinding::new(
+                Shortcut::new(Key::Character('a'), Modifiers::new().super_key()),
+                EditorMessage::SelectAll,
+                "Select all (macOS)",
+            ));
+
+            self.bind(KeyBinding::new(
+                Shortcut::new(Key::Character('x'), Modifiers::new().super_key()),
+                EditorMessage::Cut,
+                "Cut (macOS)",
+            ));
+
+            self.bind(KeyBinding::new(
+                Shortcut::new(Key::Character('c'), Modifiers::new().super_key()),
+                EditorMessage::Copy,
+                "Copy (macOS)",
+            ));
+
+            self.bind(KeyBinding::new(
+                Shortcut::new(Key::Character('v'), Modifiers::new().super_key()),
+                EditorMessage::Paste,
+                "Paste (macOS)",
+            ));
+
+            self.bind(KeyBinding::new(
+                Shortcut::new(Key::Character('z'), Modifiers::new().super_key()),
+                EditorMessage::Undo,
+                "Undo (macOS)",
+            ));
+
+            self.bind(KeyBinding::new(
+                Shortcut::new(Key::Character('z'), Modifiers::new().super_key().shift()),
+                EditorMessage::Redo,
+                "Redo (macOS)",
+            ));
+
+            // macOS specific word movement with Option (Alt)
+            self.bind(KeyBinding::new(
+                Shortcut::alt(Key::Named(NamedKey::ArrowLeft)),
+                EditorMessage::MoveCursor(CursorMovement::WordLeft),
+                "Move to previous word (macOS)",
+            ));
+
+            self.bind(KeyBinding::new(
+                Shortcut::alt(Key::Named(NamedKey::ArrowRight)),
+                EditorMessage::MoveCursor(CursorMovement::WordRight),
+                "Move to next word (macOS)",
+            ));
+
+            // macOS word selection with Option+Shift
+            self.bind(KeyBinding::new(
+                Shortcut::alt_shift(Key::Named(NamedKey::ArrowLeft)),
+                EditorMessage::MoveCursorWithSelection(CursorMovement::WordLeft, true),
+                "Select to previous word (macOS)",
+            ));
+
+            self.bind(KeyBinding::new(
+                Shortcut::alt_shift(Key::Named(NamedKey::ArrowRight)),
+                EditorMessage::MoveCursorWithSelection(CursorMovement::WordRight, true),
+                "Select to next word (macOS)",
+            ));
+
+            // macOS word deletion with Option
+            self.bind(KeyBinding::new(
+                Shortcut::alt(Key::Named(NamedKey::Delete)),
+                EditorMessage::Command("delete_word_forward".to_string(), vec![]),
+                "Delete word forward (macOS)",
+            ));
+
+            self.bind(KeyBinding::new(
+                Shortcut::alt(Key::Named(NamedKey::Backspace)),
+                EditorMessage::Command("delete_word_backward".to_string(), vec![]),
+                "Delete word backward (macOS)",
+            ));
+
+            // macOS specific search shortcuts
+            self.bind(KeyBinding::new(
+                Shortcut::new(Key::Character('f'), Modifiers::new().super_key()),
+                EditorMessage::Find("".to_string()),
+                "Find (macOS)",
+            ));
+
+            self.bind(KeyBinding::new(
+                Shortcut::new(Key::Character('g'), Modifiers::new().super_key()),
+                EditorMessage::FindNext,
+                "Find next (macOS)",
+            ));
+
+            self.bind(KeyBinding::new(
+                Shortcut::new(Key::Character('g'), Modifiers::new().super_key().shift()),
+                EditorMessage::FindPrevious,
+                "Find previous (macOS)",
+            ));
+
+            // macOS line operations
+            self.bind(KeyBinding::new(
+                Shortcut::new(Key::Character('d'), Modifiers::new().super_key()),
+                EditorMessage::Command("duplicate_line".to_string(), vec![]),
+                "Duplicate line (macOS)",
+            ));
+
+            self.bind(KeyBinding::new(
+                Shortcut::new(Key::Character('k'), Modifiers::new().super_key()),
+                EditorMessage::DeleteLine,
+                "Delete line (macOS)",
+            ));
+
+            // macOS comment shortcuts
+            self.bind(KeyBinding::new(
+                Shortcut::new(Key::Character('/'), Modifiers::new().super_key()),
+                EditorMessage::Command("toggle_comment".to_string(), vec![]),
+                "Toggle line comment (macOS)",
+            ));
+        }
+
+        // Windows/Linux specific shortcuts (beyond the defaults)
+        if !cfg!(target_os = "macos") {
+            // Windows-style shortcuts
+            self.bind(KeyBinding::new(
+                Shortcut::ctrl(Key::Character('n')),
+                EditorMessage::Command("new_file".to_string(), vec![]),
+                "New file",
+            ));
+
+            self.bind(KeyBinding::new(
+                Shortcut::ctrl(Key::Character('o')),
+                EditorMessage::Command("open_file".to_string(), vec![]),
+                "Open file",
+            ));
+
+            self.bind(KeyBinding::new(
+                Shortcut::ctrl(Key::Character('s')),
+                EditorMessage::Command("save_file".to_string(), vec![]),
+                "Save file",
+            ));
+
+            self.bind(KeyBinding::new(
+                Shortcut::ctrl_shift(Key::Character('s')),
+                EditorMessage::Command("save_as".to_string(), vec![]),
+                "Save as",
+            ));
+
+            // Additional Windows/Linux specific shortcuts can be added here
         }
     }
 

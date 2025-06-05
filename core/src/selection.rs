@@ -78,8 +78,17 @@ impl Selection {
         }
 
         let start = Position::new(line_num, 0);
-        let line = rope.line(line_num);
-        let end = Position::new(line_num, line.len_chars().saturating_sub(1));
+
+        // Select the entire line including the newline character
+        // For the last line, select to the end of the line content
+        let end = if line_num + 1 < rope.len_lines() {
+            // There's a next line, so select up to the start of the next line (including newline)
+            Position::new(line_num + 1, 0)
+        } else {
+            // This is the last line, select to the end of the line content
+            let line = rope.line(line_num);
+            Position::new(line_num, line.len_chars())
+        };
 
         Some(Self::new(start, end))
     }
