@@ -1,6 +1,6 @@
 use crate::{
     messages::{CursorMovement, EditorEvent, EditorResponse},
-    Buffer, Cursor, EditorMessage, Position, Selection, ShortcutManager,
+    Buffer, Cursor, EditorMessage, Position, Selection,
 };
 
 /// Main editor state and logic
@@ -9,7 +9,6 @@ pub struct Editor {
     cursor: Cursor,
     selection: Option<Selection>,
     clipboard: String,
-    shortcut_manager: ShortcutManager,
 }
 
 impl Editor {
@@ -20,7 +19,6 @@ impl Editor {
             cursor: Cursor::new(),
             selection: None,
             clipboard: String::new(),
-            shortcut_manager: ShortcutManager::new(),
         }
     }
 
@@ -31,7 +29,6 @@ impl Editor {
             cursor: Cursor::new(),
             selection: None,
             clipboard: String::new(),
-            shortcut_manager: ShortcutManager::new(),
         }
     }
 
@@ -48,16 +45,6 @@ impl Editor {
     /// Get the current selection
     pub fn current_selection(&self) -> Option<&Selection> {
         self.selection.as_ref()
-    }
-
-    /// Get the shortcut manager
-    pub fn shortcut_manager(&self) -> &ShortcutManager {
-        &self.shortcut_manager
-    }
-
-    /// Get the shortcut manager mutably
-    pub fn shortcut_manager_mut(&mut self) -> &mut ShortcutManager {
-        &mut self.shortcut_manager
     }
 
     /// Add an event handler (simplified version)

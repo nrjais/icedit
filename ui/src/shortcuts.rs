@@ -1,5 +1,5 @@
-use crate::EditorMessage;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use icedit_core::EditorMessage;
 // use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -131,7 +131,7 @@ impl ShortcutManager {
 
     /// Load default key bindings
     fn load_default_bindings(&mut self) {
-        use crate::messages::CursorMovement;
+        use icedit_core::CursorMovement;
         use KeyCode::*;
 
         // Basic cursor movement

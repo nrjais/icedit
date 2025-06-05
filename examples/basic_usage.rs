@@ -1,5 +1,5 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use icedit::{Editor, EditorMessage, Position};
+use icedit::{Editor, EditorMessage, Position, UIEditor};
 
 fn main() {
     // Create a new editor instance
@@ -37,15 +37,13 @@ fn main() {
     let content = editor.current_buffer().text();
     println!("Buffer content:\n{}", content);
 
-    // Demonstrate shortcut handling
-    let shortcut_manager = editor.shortcut_manager();
+    // Demonstrate shortcut handling with UIEditor
+    let mut ui_editor = UIEditor::with_text("Hello, World!");
 
     // Simulate Ctrl+A key event
     let key_event = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL);
-    if let Some(message) = shortcut_manager.handle_key_event(key_event) {
-        println!("Shortcut triggered: {:?}", message);
-        let response = editor.handle_message(message);
-        println!("Shortcut response: {:?}", response);
+    if let Some(response) = ui_editor.handle_key_event(key_event) {
+        println!("Shortcut triggered with response: {:?}", response);
     }
 
     // Demonstrate undo/redo

@@ -1,14 +1,22 @@
+[workspace]
+members = ["core", "ui"]
+resolver = "2"
+
+[workspace.dependencies]
+ropey = "1.6"
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "2.0.12"
+crossterm = "0.27"
+unicode-width = "0.2.0"
+tokio = { version = "1.0", features = ["full"] }
+
 [package]
 name = "icedit"
 version = "0.1.0"
 edition = "2021"
+description = "A modular text editor with core and UI components"
 
 [dependencies]
-ropey = "1.6"
-serde = { version = "1.0", features = ["derive"] }
-thiserror = "1.0"
-crossterm = "0.27"
-unicode-width = "0.1"
-
-[dev-dependencies]
-tokio = { version = "1.0", features = ["full"] }
+icedit-core = { path = "core" }
+icedit-ui = { path = "ui" }
+crossterm = { workspace = true }
