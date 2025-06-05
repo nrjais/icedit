@@ -84,28 +84,34 @@ editor.handle_message(EditorMessage::Paste);
 - `Replace(String, String)` - Replace text
 - `ReplaceAll(String, String)` - Replace all occurrences
 
-### Shortcut System
+### Key Events and Shortcut System
 
-The editor includes a comprehensive shortcut system with platform-specific bindings:
+The editor includes a comprehensive key event system with platform-specific bindings:
 
 ```rust
-use icedit::{ShortcutManager, Shortcut, KeyBinding, EditorMessage};
-use crossterm::event::{KeyCode, KeyModifiers};
+use icedit_core::{ShortcutManager, Shortcut, KeyBinding, EditorMessage, KeyEvent, Key, NamedKey, Modifiers};
 
 let mut shortcuts = ShortcutManager::new();
 
 // Add custom binding
 let binding = KeyBinding::new(
-    Shortcut::ctrl(KeyCode::Char('d')),
+    Shortcut::ctrl(Key::Character('d')),
     EditorMessage::DeleteLine,
     "Delete current line"
 );
 shortcuts.bind(binding);
 
 // Handle key events
-let key_event = KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL);
-if let Some(message) = shortcuts.handle_key_event(key_event) {
-    let response = editor.handle_message(message);
+let key_event = KeyEvent::new(Key::Character('s'), Modifiers::new().control());
+if let Some(shortcut_event) = shortcuts.handle_key_event(key_event) {
+    match shortcut_event {
+        ShortcutEvent::EditorMessage(message) => {
+            let response = editor.handle_message(message);
+        }
+        ShortcutEvent::CharacterInput(ch) => {
+            let response = editor.handle_message(EditorMessage::InsertChar(ch));
+        }
+    }
 }
 ```
 
@@ -215,20 +221,24 @@ Use frameworks like `egui`, `iced`, or `tauri` for desktop applications.
 ### Web
 Use `wasm-bindgen` to compile to WebAssembly for web-based editors.
 
-### Example Integration
+### Widget Integration
+
+The editor widget automatically converts UI framework key events to core key events and handles them through the shortcut manager:
 
 ```rust
-// Terminal UI example
-use crossterm::event::{read, Event, KeyEvent};
-
-loop {
-    if let Ok(Event::Key(key_event)) = read() {
-        if let Some(message) = editor.shortcut_manager().handle_key_event(key_event) {
-            editor.handle_message(message);
-        } else if let KeyEvent { code: KeyCode::Char(c), .. } = key_event {
-            editor.handle_message(EditorMessage::InsertChar(c));
+// Widget message handling
+match widget_message {
+    WidgetMessage::ShortcutEvent(shortcut_event) => {
+        match shortcut_event {
+            ShortcutEvent::EditorMessage(message) => {
+                editor.handle_message(message);
+            }
+            ShortcutEvent::CharacterInput(ch) => {
+                editor.handle_message(EditorMessage::InsertChar(ch));
+            }
         }
     }
+    // Handle other widget events...
 }
 ```
 

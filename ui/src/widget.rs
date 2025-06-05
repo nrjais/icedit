@@ -7,7 +7,9 @@ use iced::{
     },
     mouse, Color, Element, Event, Font, Length, Point, Rectangle, Size, Theme, Vector,
 };
-use icedit_core::{Editor, Position, Selection};
+use icedit_core::{
+    Editor, Key, KeyEvent, Modifiers, NamedKey, Position, Selection, ShortcutEvent, ShortcutManager,
+};
 
 // Use Iced's SmolStr directly
 type IcedSmolStr = iced::advanced::graphics::core::SmolStr;
@@ -44,8 +46,8 @@ impl EditorState {
 /// Messages that the widget can emit - these will be routed by the user
 #[derive(Debug, Clone)]
 pub enum WidgetMessage {
-    /// Key input for the editor
-    KeyInput(icedit_core::KeyInput),
+    /// Shortcut event from the editor
+    ShortcutEvent(ShortcutEvent),
     /// Scroll events
     Scroll(Vector),
     /// Mouse events
@@ -64,6 +66,7 @@ pub struct EditorWidget<Message> {
     text_color: Color,
     cursor_color: Color,
     selection_color: Color,
+    shortcut_manager: ShortcutManager,
     on_message: Box<dyn Fn(WidgetMessage) -> Message>,
 }
 
@@ -85,6 +88,7 @@ impl<Message> EditorWidget<Message> {
             text_color: Color::from_rgb(0.9, 0.9, 0.9),
             cursor_color: Color::from_rgb(1.0, 1.0, 1.0),
             selection_color: Color::from_rgba(0.3, 0.5, 1.0, 0.3),
+            shortcut_manager: ShortcutManager::new(),
             on_message: Box::new(on_message),
         }
     }
@@ -117,74 +121,74 @@ impl<Message> EditorWidget<Message> {
         )
     }
 
-    /// Convert Iced key events to simplified KeyInput
-    fn simple_key_conversion(
+    /// Convert Iced key events to core KeyEvent
+    fn convert_key_event(
         &self,
         key: &iced::keyboard::Key<IcedSmolStr>,
         modifiers: iced::keyboard::Modifiers,
         text: Option<IcedSmolStr>,
-    ) -> Option<icedit_core::KeyInput> {
-        // Handle character input first
-        if let iced::keyboard::Key::Character(c) = key {
-            if !modifiers.control() && !modifiers.alt() && !modifiers.logo() {
-                // Regular character input
-                if let Some(text) = text {
+    ) -> Option<KeyEvent> {
+        // Convert modifiers
+        let core_modifiers = Modifiers {
+            shift: modifiers.shift(),
+            control: modifiers.control(),
+            alt: modifiers.alt(),
+            super_key: modifiers.logo(),
+        };
+
+        // Convert key
+        let core_key = match key {
+            iced::keyboard::Key::Named(named) => match named {
+                iced::keyboard::key::Named::Backspace => Some(Key::Named(NamedKey::Backspace)),
+                iced::keyboard::key::Named::Delete => Some(Key::Named(NamedKey::Delete)),
+                iced::keyboard::key::Named::ArrowLeft => Some(Key::Named(NamedKey::ArrowLeft)),
+                iced::keyboard::key::Named::ArrowRight => Some(Key::Named(NamedKey::ArrowRight)),
+                iced::keyboard::key::Named::ArrowUp => Some(Key::Named(NamedKey::ArrowUp)),
+                iced::keyboard::key::Named::ArrowDown => Some(Key::Named(NamedKey::ArrowDown)),
+                iced::keyboard::key::Named::Home => Some(Key::Named(NamedKey::Home)),
+                iced::keyboard::key::Named::End => Some(Key::Named(NamedKey::End)),
+                iced::keyboard::key::Named::Enter => Some(Key::Named(NamedKey::Enter)),
+                iced::keyboard::key::Named::Escape => Some(Key::Named(NamedKey::Escape)),
+                iced::keyboard::key::Named::Tab => Some(Key::Named(NamedKey::Tab)),
+                iced::keyboard::key::Named::Space => Some(Key::Named(NamedKey::Space)),
+                iced::keyboard::key::Named::PageUp => Some(Key::Named(NamedKey::PageUp)),
+                iced::keyboard::key::Named::PageDown => Some(Key::Named(NamedKey::PageDown)),
+                iced::keyboard::key::Named::Insert => Some(Key::Named(NamedKey::Insert)),
+                iced::keyboard::key::Named::F1 => Some(Key::Named(NamedKey::F1)),
+                iced::keyboard::key::Named::F2 => Some(Key::Named(NamedKey::F2)),
+                iced::keyboard::key::Named::F3 => Some(Key::Named(NamedKey::F3)),
+                iced::keyboard::key::Named::F4 => Some(Key::Named(NamedKey::F4)),
+                iced::keyboard::key::Named::F5 => Some(Key::Named(NamedKey::F5)),
+                iced::keyboard::key::Named::F6 => Some(Key::Named(NamedKey::F6)),
+                iced::keyboard::key::Named::F7 => Some(Key::Named(NamedKey::F7)),
+                iced::keyboard::key::Named::F8 => Some(Key::Named(NamedKey::F8)),
+                iced::keyboard::key::Named::F9 => Some(Key::Named(NamedKey::F9)),
+                iced::keyboard::key::Named::F10 => Some(Key::Named(NamedKey::F10)),
+                iced::keyboard::key::Named::F11 => Some(Key::Named(NamedKey::F11)),
+                iced::keyboard::key::Named::F12 => Some(Key::Named(NamedKey::F12)),
+                _ => None,
+            },
+            iced::keyboard::Key::Character(c) => {
+                if let Some(text) = &text {
                     let text_str = text.as_str();
                     if text_str.len() == 1 {
-                        return Some(icedit_core::KeyInput::Character(
-                            text_str.chars().next().unwrap(),
-                        ));
+                        Some(Key::Character(text_str.chars().next().unwrap()))
+                    } else {
+                        None
                     }
                 } else {
                     let c_str = c.as_str();
                     if c_str.len() == 1 {
-                        return Some(icedit_core::KeyInput::Character(
-                            c_str.chars().next().unwrap(),
-                        ));
+                        Some(Key::Character(c_str.chars().next().unwrap()))
+                    } else {
+                        None
                     }
-                }
-            }
-        }
-
-        // Handle Enter key for character input
-        if matches!(
-            key,
-            iced::keyboard::Key::Named(iced::keyboard::key::Named::Enter)
-        ) {
-            if !modifiers.control() && !modifiers.alt() && !modifiers.logo() {
-                return Some(icedit_core::KeyInput::Character('\n'));
-            }
-        }
-
-        // Handle special keys and shortcuts
-        let command = match key {
-            iced::keyboard::Key::Named(named) => match named {
-                iced::keyboard::key::Named::Backspace => Some("backspace"),
-                iced::keyboard::key::Named::Delete => Some("delete"),
-                iced::keyboard::key::Named::ArrowLeft => Some("left"),
-                iced::keyboard::key::Named::ArrowRight => Some("right"),
-                iced::keyboard::key::Named::ArrowUp => Some("up"),
-                iced::keyboard::key::Named::ArrowDown => Some("down"),
-                iced::keyboard::key::Named::Home => Some("home"),
-                iced::keyboard::key::Named::End => Some("end"),
-                _ => None,
-            },
-            iced::keyboard::Key::Character(c) if modifiers.control() => {
-                let s = c.as_str();
-                match s {
-                    "a" => Some("ctrl+a"),
-                    "c" => Some("ctrl+c"),
-                    "v" => Some("ctrl+v"),
-                    "x" => Some("ctrl+x"),
-                    "z" => Some("ctrl+z"),
-                    "y" => Some("ctrl+y"),
-                    _ => None,
                 }
             }
             _ => None,
         };
 
-        command.map(|cmd| icedit_core::KeyInput::Command(cmd.to_string()))
+        core_key.map(|key| KeyEvent::new(key, core_modifiers))
     }
 }
 
@@ -363,12 +367,15 @@ where
                 text,
                 ..
             }) => {
-                // Convert key events to simplified KeyInput
-                let key_input = self.simple_key_conversion(&key, modifiers, text);
-                if let Some(input) = key_input {
-                    let message = (self.on_message)(WidgetMessage::KeyInput(input));
-                    shell.publish(message);
-                    return Status::Captured;
+                // Convert key events to core KeyEvent and handle with shortcut manager
+                if let Some(key_event) = self.convert_key_event(&key, modifiers, text) {
+                    if let Some(shortcut_event) = self.shortcut_manager.handle_key_event(key_event)
+                    {
+                        let message =
+                            (self.on_message)(WidgetMessage::ShortcutEvent(shortcut_event));
+                        shell.publish(message);
+                        return Status::Captured;
+                    }
                 }
             }
             Event::Mouse(mouse::Event::WheelScrolled { delta }) => {

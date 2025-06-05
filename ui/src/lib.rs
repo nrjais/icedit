@@ -1,11 +1,9 @@
-pub mod shortcuts;
 pub mod widget;
 
 // Re-export core types for convenience
 pub use icedit_core::*;
 
 // Export UI-specific types
-pub use shortcuts::{KeyBinding, Shortcut, ShortcutManager};
 pub use widget::*;
 
 /// UI Editor that combines core editor with shortcut management
@@ -51,13 +49,30 @@ impl UIEditor {
         &mut self.shortcut_manager
     }
 
-    /// Handle a key input using shortcuts, returning the editor response if a shortcut was triggered
-    pub fn handle_key_input(&mut self, input: KeyInput) -> Option<EditorResponse> {
-        if let Some(message) = self.shortcut_manager.handle_key_input(&input) {
-            Some(self.core_editor.handle_message(message))
+    /// Handle a key event using shortcuts, returning the editor response if a shortcut was triggered
+    pub fn handle_key_event(&mut self, event: KeyEvent) -> Option<EditorResponse> {
+        if let Some(shortcut_event) = self.shortcut_manager.handle_key_event(event) {
+            match shortcut_event {
+                ShortcutEvent::EditorMessage(message) => {
+                    Some(self.core_editor.handle_message(message))
+                }
+                ShortcutEvent::CharacterInput(ch) => Some(
+                    self.core_editor
+                        .handle_message(EditorMessage::InsertChar(ch)),
+                ),
+            }
         } else {
-            // If no shortcut matched, handle the input directly
-            Some(self.core_editor.handle_key_input(input))
+            None
+        }
+    }
+
+    /// Handle a shortcut event directly
+    pub fn handle_shortcut_event(&mut self, event: ShortcutEvent) -> EditorResponse {
+        match event {
+            ShortcutEvent::EditorMessage(message) => self.core_editor.handle_message(message),
+            ShortcutEvent::CharacterInput(ch) => self
+                .core_editor
+                .handle_message(EditorMessage::InsertChar(ch)),
         }
     }
 
@@ -136,15 +151,15 @@ mod tests {
         editor.handle_message(EditorMessage::InsertText("Hello, World!".to_string()));
 
         // Test Ctrl+A shortcut for SelectAll
-        let key_input = KeyInput::Command("ctrl+a".to_string());
+        let key_event = KeyEvent::new(Key::Character('a'), Modifiers::new().control());
 
-        if let Some(response) = editor.handle_key_input(key_input) {
+        if let Some(response) = editor.handle_key_event(key_event) {
             assert!(matches!(response, EditorResponse::SelectionChanged(_)));
         }
 
         // Test copy shortcut
-        let copy_input = KeyInput::Command("ctrl+c".to_string());
-        if let Some(response) = editor.handle_key_input(copy_input) {
+        let copy_event = KeyEvent::new(Key::Character('c'), Modifiers::new().control());
+        if let Some(response) = editor.handle_key_event(copy_event) {
             assert!(matches!(response, EditorResponse::Success));
         }
 

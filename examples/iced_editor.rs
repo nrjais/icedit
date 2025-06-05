@@ -1,5 +1,7 @@
+use std::fs;
+
 use iced::{Element, Task, Theme};
-use icedit_core::{Editor, EditorMessage, KeyInput};
+use icedit_core::{Editor, EditorMessage, ShortcutEvent};
 use icedit_ui::{styled_editor, EditorState, WidgetMessage};
 
 /// Main application state
@@ -17,7 +19,8 @@ enum Message {
 
 impl EditorApp {
     fn new() -> Self {
-        let editor = Editor::with_text("Welcome to IcEdit!\n\nThis is a text editor built with Iced.\nYou can:\n- Type to insert text\n- Use arrow keys to move the cursor\n- Use Ctrl+A to select all\n- Use Ctrl+C/V for copy/paste\n- Use Ctrl+Z/Y for undo/redo\n- Scroll with mouse wheel");
+        let text = fs::read_to_string("README.md").unwrap();
+        let editor = Editor::with_text(&text);
         let editor_state = EditorState::from_editor(&editor);
 
         Self {
@@ -34,9 +37,16 @@ impl EditorApp {
         match message {
             Message::Widget(widget_message) => {
                 match widget_message {
-                    WidgetMessage::KeyInput(key_input) => {
-                        // Handle key input using the core editor's simplified interface
-                        let _response = self.editor.handle_key_input(key_input);
+                    WidgetMessage::ShortcutEvent(shortcut_event) => {
+                        // Handle shortcut event using the core editor
+                        let _response = match shortcut_event {
+                            ShortcutEvent::EditorMessage(message) => {
+                                self.editor.handle_message(message)
+                            }
+                            ShortcutEvent::CharacterInput(ch) => {
+                                self.editor.handle_message(EditorMessage::InsertChar(ch))
+                            }
+                        };
                         self.update_editor_state();
                     }
                     WidgetMessage::MousePressed(point) => {
