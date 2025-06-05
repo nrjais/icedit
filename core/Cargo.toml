@@ -6,7 +6,6 @@ description = "Core functionality for the IcEdit text editor"
 
 [dependencies]
 ropey = { workspace = true }
-serde = { workspace = true }
 thiserror = { workspace = true }
 unicode-width = { workspace = true }
 

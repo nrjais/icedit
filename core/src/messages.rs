@@ -1,8 +1,7 @@
 use crate::{Position, Selection};
-use serde::{Deserialize, Serialize};
 
 /// All possible editor actions represented as messages
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum EditorMessage {
     // Text manipulation
     InsertChar(char),
@@ -47,7 +46,7 @@ pub enum EditorMessage {
     Command(String, Vec<String>),
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum CursorMovement {
     Up,
     Down,
@@ -64,7 +63,7 @@ pub enum CursorMovement {
 }
 
 /// Response from the editor after processing a message
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum EditorResponse {
     Success,
     Error(String),
@@ -75,7 +74,7 @@ pub enum EditorResponse {
 }
 
 /// Event that can be sent to UI layers
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum EditorEvent {
     TextChanged,
     CursorMoved(Position),

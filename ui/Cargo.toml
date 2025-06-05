@@ -7,7 +7,6 @@ description = "UI components and shortcut management for the IcEdit text editor"
 [dependencies]
 icedit-core = { path = "../core" }
 crossterm = { workspace = true }
-serde = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }

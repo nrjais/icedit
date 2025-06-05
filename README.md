@@ -235,7 +235,7 @@ loop {
 ## Dependencies
 
 - `ropey`: Efficient rope data structure for text
-- `serde`: Serialization support for messages
+
 - `thiserror`: Error handling
 - `crossterm`: Cross-platform terminal handling
 - `unicode-width`: Unicode text width calculations

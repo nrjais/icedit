@@ -1,8 +1,7 @@
 use ropey::Rope;
-use serde::{Deserialize, Serialize};
 
 /// Represents a position in the text buffer
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Position {
     pub line: usize,
     pub column: usize,
@@ -42,7 +41,7 @@ impl Position {
 }
 
 /// Manages cursor state and movement
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Cursor {
     position: Position,
     desired_column: Option<usize>, // For vertical movement

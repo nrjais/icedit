@@ -1,9 +1,8 @@
 use crate::Position;
 use ropey::Rope;
-use serde::{Deserialize, Serialize};
 
 /// Represents a text selection range
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Selection {
     pub start: Position,
     pub end: Position,

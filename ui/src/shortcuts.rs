@@ -1,6 +1,5 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use icedit_core::EditorMessage;
-// use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Represents a keyboard shortcut
