@@ -51,15 +51,13 @@ impl UIEditor {
         &mut self.shortcut_manager
     }
 
-    /// Handle a key event using shortcuts, returning the editor response if a shortcut was triggered
-    pub fn handle_key_event(
-        &mut self,
-        event: crossterm::event::KeyEvent,
-    ) -> Option<EditorResponse> {
-        if let Some(message) = self.shortcut_manager.handle_key_event(event) {
+    /// Handle a key input using shortcuts, returning the editor response if a shortcut was triggered
+    pub fn handle_key_input(&mut self, input: KeyInput) -> Option<EditorResponse> {
+        if let Some(message) = self.shortcut_manager.handle_key_input(&input) {
             Some(self.core_editor.handle_message(message))
         } else {
-            None
+            // If no shortcut matched, handle the input directly
+            Some(self.core_editor.handle_key_input(input))
         }
     }
 
@@ -116,7 +114,6 @@ impl Default for UIEditor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     #[test]
     fn test_ui_editor_functionality() {
@@ -139,15 +136,15 @@ mod tests {
         editor.handle_message(EditorMessage::InsertText("Hello, World!".to_string()));
 
         // Test Ctrl+A shortcut for SelectAll
-        let key_event = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL);
+        let key_input = KeyInput::Command("ctrl+a".to_string());
 
-        if let Some(response) = editor.handle_key_event(key_event) {
+        if let Some(response) = editor.handle_key_input(key_input) {
             assert!(matches!(response, EditorResponse::SelectionChanged(_)));
         }
 
         // Test copy shortcut
-        let copy_event = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
-        if let Some(response) = editor.handle_key_event(copy_event) {
+        let copy_input = KeyInput::Command("ctrl+c".to_string());
+        if let Some(response) = editor.handle_key_input(copy_input) {
             assert!(matches!(response, EditorResponse::Success));
         }
 

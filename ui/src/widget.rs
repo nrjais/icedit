@@ -7,7 +7,10 @@ use iced::{
     },
     mouse, Color, Element, Event, Font, Length, Point, Rectangle, Size, Theme, Vector,
 };
-use icedit_core::{Editor, EditorMessage, Position, Selection};
+use icedit_core::{Editor, Position, Selection};
+
+// Use Iced's SmolStr directly
+type IcedSmolStr = iced::advanced::graphics::core::SmolStr;
 
 /// State that should be passed from outside to the widget
 #[derive(Debug, Clone)]
@@ -41,8 +44,8 @@ impl EditorState {
 /// Messages that the widget can emit - these will be routed by the user
 #[derive(Debug, Clone)]
 pub enum WidgetMessage {
-    /// Editor message to be handled by the application
-    Editor(EditorMessage),
+    /// Key input for the editor
+    KeyInput(icedit_core::KeyInput),
     /// Scroll events
     Scroll(Vector),
     /// Mouse events
@@ -114,20 +117,74 @@ impl<Message> EditorWidget<Message> {
         )
     }
 
-    fn point_to_position(&self, point: Point) -> Position {
-        let line = ((point.y + self.state.scroll_offset.y) / self.line_height).max(0.0) as usize;
-        let column = ((point.x + self.state.scroll_offset.x) / self.char_width).max(0.0) as usize;
+    /// Convert Iced key events to simplified KeyInput
+    fn simple_key_conversion(
+        &self,
+        key: &iced::keyboard::Key<IcedSmolStr>,
+        modifiers: iced::keyboard::Modifiers,
+        text: Option<IcedSmolStr>,
+    ) -> Option<icedit_core::KeyInput> {
+        // Handle character input first
+        if let iced::keyboard::Key::Character(c) = key {
+            if !modifiers.control() && !modifiers.alt() && !modifiers.logo() {
+                // Regular character input
+                if let Some(text) = text {
+                    let text_str = text.as_str();
+                    if text_str.len() == 1 {
+                        return Some(icedit_core::KeyInput::Character(
+                            text_str.chars().next().unwrap(),
+                        ));
+                    }
+                } else {
+                    let c_str = c.as_str();
+                    if c_str.len() == 1 {
+                        return Some(icedit_core::KeyInput::Character(
+                            c_str.chars().next().unwrap(),
+                        ));
+                    }
+                }
+            }
+        }
 
-        // Clamp to actual text bounds
-        let lines: Vec<&str> = self.state.buffer_content.lines().collect();
-        let line = line.min(lines.len().saturating_sub(1));
-        let column = if line < lines.len() {
-            column.min(lines[line].len())
-        } else {
-            0
+        // Handle Enter key for character input
+        if matches!(
+            key,
+            iced::keyboard::Key::Named(iced::keyboard::key::Named::Enter)
+        ) {
+            if !modifiers.control() && !modifiers.alt() && !modifiers.logo() {
+                return Some(icedit_core::KeyInput::Character('\n'));
+            }
+        }
+
+        // Handle special keys and shortcuts
+        let command = match key {
+            iced::keyboard::Key::Named(named) => match named {
+                iced::keyboard::key::Named::Backspace => Some("backspace"),
+                iced::keyboard::key::Named::Delete => Some("delete"),
+                iced::keyboard::key::Named::ArrowLeft => Some("left"),
+                iced::keyboard::key::Named::ArrowRight => Some("right"),
+                iced::keyboard::key::Named::ArrowUp => Some("up"),
+                iced::keyboard::key::Named::ArrowDown => Some("down"),
+                iced::keyboard::key::Named::Home => Some("home"),
+                iced::keyboard::key::Named::End => Some("end"),
+                _ => None,
+            },
+            iced::keyboard::Key::Character(c) if modifiers.control() => {
+                let s = c.as_str();
+                match s {
+                    "a" => Some("ctrl+a"),
+                    "c" => Some("ctrl+c"),
+                    "v" => Some("ctrl+v"),
+                    "x" => Some("ctrl+x"),
+                    "z" => Some("ctrl+z"),
+                    "y" => Some("ctrl+y"),
+                    _ => None,
+                }
+            }
+            _ => None,
         };
 
-        Position::new(line, column)
+        command.map(|cmd| icedit_core::KeyInput::Command(cmd.to_string()))
     }
 }
 
@@ -295,10 +352,7 @@ where
         match event {
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
                 if let Some(cursor_position) = cursor.position_in(layout.bounds()) {
-                    let position = self.point_to_position(cursor_position);
-                    let message = (self.on_message)(WidgetMessage::Editor(
-                        EditorMessage::MoveCursorTo(position),
-                    ));
+                    let message = (self.on_message)(WidgetMessage::MousePressed(cursor_position));
                     shell.publish(message);
                     return Status::Captured;
                 }
@@ -309,68 +363,10 @@ where
                 text,
                 ..
             }) => {
-                let editor_message = match key.as_ref() {
-                    iced::keyboard::Key::Character(c) if !modifiers.control() => {
-                        if let Some(text) = text {
-                            if text.len() == 1 {
-                                Some(EditorMessage::InsertChar(text.chars().next().unwrap()))
-                            } else {
-                                Some(EditorMessage::InsertText(text.to_string()))
-                            }
-                        } else {
-                            Some(EditorMessage::InsertChar(c.chars().next().unwrap_or(' ')))
-                        }
-                    }
-                    iced::keyboard::Key::Named(iced::keyboard::key::Named::Enter) => {
-                        Some(EditorMessage::InsertChar('\n'))
-                    }
-                    iced::keyboard::Key::Named(iced::keyboard::key::Named::Backspace) => {
-                        Some(EditorMessage::DeleteCharBackward)
-                    }
-                    iced::keyboard::Key::Named(iced::keyboard::key::Named::Delete) => {
-                        Some(EditorMessage::DeleteChar)
-                    }
-                    iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowLeft) => {
-                        Some(EditorMessage::MoveCursor(icedit_core::CursorMovement::Left))
-                    }
-                    iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowRight) => Some(
-                        EditorMessage::MoveCursor(icedit_core::CursorMovement::Right),
-                    ),
-                    iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowUp) => {
-                        Some(EditorMessage::MoveCursor(icedit_core::CursorMovement::Up))
-                    }
-                    iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowDown) => {
-                        Some(EditorMessage::MoveCursor(icedit_core::CursorMovement::Down))
-                    }
-                    iced::keyboard::Key::Named(iced::keyboard::key::Named::Home) => Some(
-                        EditorMessage::MoveCursor(icedit_core::CursorMovement::LineStart),
-                    ),
-                    iced::keyboard::Key::Named(iced::keyboard::key::Named::End) => Some(
-                        EditorMessage::MoveCursor(icedit_core::CursorMovement::LineEnd),
-                    ),
-                    iced::keyboard::Key::Character("a") if modifiers.control() => {
-                        Some(EditorMessage::SelectAll)
-                    }
-                    iced::keyboard::Key::Character("c") if modifiers.control() => {
-                        Some(EditorMessage::Copy)
-                    }
-                    iced::keyboard::Key::Character("v") if modifiers.control() => {
-                        Some(EditorMessage::Paste)
-                    }
-                    iced::keyboard::Key::Character("x") if modifiers.control() => {
-                        Some(EditorMessage::Cut)
-                    }
-                    iced::keyboard::Key::Character("z") if modifiers.control() => {
-                        Some(EditorMessage::Undo)
-                    }
-                    iced::keyboard::Key::Character("y") if modifiers.control() => {
-                        Some(EditorMessage::Redo)
-                    }
-                    _ => None,
-                };
-
-                if let Some(msg) = editor_message {
-                    let message = (self.on_message)(WidgetMessage::Editor(msg));
+                // Convert key events to simplified KeyInput
+                let key_input = self.simple_key_conversion(&key, modifiers, text);
+                if let Some(input) = key_input {
+                    let message = (self.on_message)(WidgetMessage::KeyInput(input));
                     shell.publish(message);
                     return Status::Captured;
                 }

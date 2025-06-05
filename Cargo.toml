@@ -5,8 +5,6 @@ resolver = "2"
 [workspace.dependencies]
 ropey = "1.6"
 thiserror = "2.0.12"
-crossterm = "0.27"
-unicode-width = "0.2.0"
 tokio = { version = "1.0", features = ["full"] }
 
 [package]
@@ -18,7 +16,6 @@ description = "A modular text editor with core and UI components"
 [dependencies]
 icedit-core = { path = "core" }
 icedit-ui = { path = "ui" }
-crossterm = { workspace = true }
 iced = { version = "0.13", features = ["canvas", "advanced"] }
 
 [[example]]

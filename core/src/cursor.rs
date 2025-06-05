@@ -24,7 +24,21 @@ impl Position {
 
         let line_start = rope.line_to_byte(self.line);
         let line = rope.line(self.line);
-        let column_bytes = std::cmp::min(self.column, line.len_bytes().saturating_sub(1));
+        // Allow cursor to be at the end of the line (after the last character)
+        let max_column = if line.len_chars() > 0 && line.char(line.len_chars() - 1) == '\n' {
+            line.len_chars() - 1 // Don't count the newline
+        } else {
+            line.len_chars() // Allow cursor at end of line
+        };
+        let column_chars = std::cmp::min(self.column, max_column);
+
+        // Convert character offset to byte offset within the line
+        let line_slice = rope.line(self.line);
+        let column_bytes = if column_chars == 0 {
+            0
+        } else {
+            line_slice.char_to_byte(column_chars)
+        };
 
         line_start + column_bytes
     }

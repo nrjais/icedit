@@ -1,54 +1,112 @@
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use icedit_core::EditorMessage;
+use icedit_core::{EditorMessage, KeyInput};
 use std::collections::HashMap;
 
-/// Represents a keyboard shortcut
+/// Represents a keyboard shortcut using string-based keys for simplicity
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Shortcut {
-    pub key: KeyCode,
-    pub modifiers: KeyModifiers,
+    pub key: String,
+    pub ctrl: bool,
+    pub alt: bool,
+    pub shift: bool,
+    pub super_key: bool,
 }
 
 impl Shortcut {
-    pub fn new(key: KeyCode, modifiers: KeyModifiers) -> Self {
-        Self { key, modifiers }
+    pub fn new(key: &str) -> Self {
+        Self {
+            key: key.to_string(),
+            ctrl: false,
+            alt: false,
+            shift: false,
+            super_key: false,
+        }
     }
 
-    /// Create shortcut from key event
-    pub fn from_key_event(event: KeyEvent) -> Self {
-        Self {
-            key: event.code,
-            modifiers: event.modifiers,
+    /// Create shortcut from string description (e.g., "ctrl+a", "shift+f3")
+    pub fn from_string(desc: &str) -> Self {
+        let mut shortcut = Self::new("");
+        let parts: Vec<&str> = desc.split('+').collect();
+
+        if let Some(key) = parts.last() {
+            shortcut.key = key.to_string();
         }
+
+        for part in &parts[..parts.len().saturating_sub(1)] {
+            match part.to_lowercase().as_str() {
+                "ctrl" => shortcut.ctrl = true,
+                "alt" => shortcut.alt = true,
+                "shift" => shortcut.shift = true,
+                "super" | "cmd" => shortcut.super_key = true,
+                _ => {}
+            }
+        }
+
+        shortcut
     }
 
     /// Common shortcuts
-    pub fn ctrl(key: KeyCode) -> Self {
-        Self::new(key, KeyModifiers::CONTROL)
-    }
-
-    pub fn alt(key: KeyCode) -> Self {
-        Self::new(key, KeyModifiers::ALT)
-    }
-
-    pub fn shift(key: KeyCode) -> Self {
-        Self::new(key, KeyModifiers::SHIFT)
-    }
-
-    pub fn cmd(key: KeyCode) -> Self {
-        if cfg!(target_os = "macos") {
-            Self::new(key, KeyModifiers::SUPER)
-        } else {
-            Self::new(key, KeyModifiers::CONTROL)
+    pub fn ctrl(key: &str) -> Self {
+        Self {
+            key: key.to_string(),
+            ctrl: true,
+            alt: false,
+            shift: false,
+            super_key: false,
         }
     }
 
-    pub fn ctrl_shift(key: KeyCode) -> Self {
-        Self::new(key, KeyModifiers::CONTROL | KeyModifiers::SHIFT)
+    pub fn alt(key: &str) -> Self {
+        Self {
+            key: key.to_string(),
+            ctrl: false,
+            alt: true,
+            shift: false,
+            super_key: false,
+        }
     }
 
-    pub fn alt_shift(key: KeyCode) -> Self {
-        Self::new(key, KeyModifiers::ALT | KeyModifiers::SHIFT)
+    pub fn shift(key: &str) -> Self {
+        Self {
+            key: key.to_string(),
+            ctrl: false,
+            alt: false,
+            shift: true,
+            super_key: false,
+        }
+    }
+
+    pub fn cmd(key: &str) -> Self {
+        if cfg!(target_os = "macos") {
+            Self {
+                key: key.to_string(),
+                ctrl: false,
+                alt: false,
+                shift: false,
+                super_key: true,
+            }
+        } else {
+            Self::ctrl(key)
+        }
+    }
+
+    pub fn ctrl_shift(key: &str) -> Self {
+        Self {
+            key: key.to_string(),
+            ctrl: true,
+            alt: false,
+            shift: true,
+            super_key: false,
+        }
+    }
+
+    pub fn alt_shift(key: &str) -> Self {
+        Self {
+            key: key.to_string(),
+            ctrl: false,
+            alt: true,
+            shift: true,
+            super_key: false,
+        }
     }
 }
 
@@ -107,10 +165,15 @@ impl ShortcutManager {
         self.bindings.get(shortcut)
     }
 
-    /// Get message from key event
-    pub fn handle_key_event(&self, event: KeyEvent) -> Option<EditorMessage> {
-        let shortcut = Shortcut::from_key_event(event);
-        self.bindings.get(&shortcut).cloned()
+    /// Get message from KeyInput - converts simple commands to editor messages
+    pub fn handle_key_input(&self, input: &KeyInput) -> Option<EditorMessage> {
+        match input {
+            KeyInput::Command(cmd) => {
+                let shortcut = Shortcut::from_string(cmd);
+                self.bindings.get(&shortcut).cloned()
+            }
+            KeyInput::Character(_) => None, // Character input is handled directly
+        }
     }
 
     /// Get all bindings
@@ -131,181 +194,180 @@ impl ShortcutManager {
     /// Load default key bindings
     fn load_default_bindings(&mut self) {
         use icedit_core::CursorMovement;
-        use KeyCode::*;
 
         // Basic cursor movement
         self.bind(KeyBinding::new(
-            Shortcut::new(Up, KeyModifiers::NONE),
+            Shortcut::new("up"),
             EditorMessage::MoveCursor(CursorMovement::Up),
             "Move cursor up",
         ));
 
         self.bind(KeyBinding::new(
-            Shortcut::new(Down, KeyModifiers::NONE),
+            Shortcut::new("down"),
             EditorMessage::MoveCursor(CursorMovement::Down),
             "Move cursor down",
         ));
 
         self.bind(KeyBinding::new(
-            Shortcut::new(Left, KeyModifiers::NONE),
+            Shortcut::new("left"),
             EditorMessage::MoveCursor(CursorMovement::Left),
             "Move cursor left",
         ));
 
         self.bind(KeyBinding::new(
-            Shortcut::new(Right, KeyModifiers::NONE),
+            Shortcut::new("right"),
             EditorMessage::MoveCursor(CursorMovement::Right),
             "Move cursor right",
         ));
 
         // Word movement
         self.bind(KeyBinding::new(
-            Shortcut::ctrl(Left),
+            Shortcut::ctrl("left"),
             EditorMessage::MoveCursor(CursorMovement::WordLeft),
             "Move cursor to previous word",
         ));
 
         self.bind(KeyBinding::new(
-            Shortcut::ctrl(Right),
+            Shortcut::ctrl("right"),
             EditorMessage::MoveCursor(CursorMovement::WordRight),
             "Move cursor to next word",
         ));
 
         // Line movement
         self.bind(KeyBinding::new(
-            Shortcut::new(Home, KeyModifiers::NONE),
+            Shortcut::new("home"),
             EditorMessage::MoveCursor(CursorMovement::LineStart),
             "Move cursor to line start",
         ));
 
         self.bind(KeyBinding::new(
-            Shortcut::new(End, KeyModifiers::NONE),
+            Shortcut::new("end"),
             EditorMessage::MoveCursor(CursorMovement::LineEnd),
             "Move cursor to line end",
         ));
 
         // Document movement
         self.bind(KeyBinding::new(
-            Shortcut::ctrl(Home),
+            Shortcut::ctrl("home"),
             EditorMessage::MoveCursor(CursorMovement::DocumentStart),
             "Move cursor to document start",
         ));
 
         self.bind(KeyBinding::new(
-            Shortcut::ctrl(End),
+            Shortcut::ctrl("end"),
             EditorMessage::MoveCursor(CursorMovement::DocumentEnd),
             "Move cursor to document end",
         ));
 
         // Page movement
         self.bind(KeyBinding::new(
-            Shortcut::new(PageUp, KeyModifiers::NONE),
+            Shortcut::new("pageup"),
             EditorMessage::MoveCursor(CursorMovement::PageUp),
             "Move cursor page up",
         ));
 
         self.bind(KeyBinding::new(
-            Shortcut::new(PageDown, KeyModifiers::NONE),
+            Shortcut::new("pagedown"),
             EditorMessage::MoveCursor(CursorMovement::PageDown),
             "Move cursor page down",
         ));
 
         // Deletion
         self.bind(KeyBinding::new(
-            Shortcut::new(Delete, KeyModifiers::NONE),
+            Shortcut::new("delete"),
             EditorMessage::DeleteChar,
             "Delete character",
         ));
 
         self.bind(KeyBinding::new(
-            Shortcut::new(Backspace, KeyModifiers::NONE),
+            Shortcut::new("backspace"),
             EditorMessage::DeleteCharBackward,
             "Delete character backward",
         ));
 
         self.bind(KeyBinding::new(
-            Shortcut::ctrl(Char('k')),
+            Shortcut::ctrl("k"),
             EditorMessage::DeleteLine,
             "Delete line",
         ));
 
         // Selection
         self.bind(KeyBinding::new(
-            Shortcut::ctrl(Char('a')),
+            Shortcut::ctrl("a"),
             EditorMessage::SelectAll,
             "Select all",
         ));
 
         self.bind(KeyBinding::new(
-            Shortcut::ctrl(Char('l')),
+            Shortcut::ctrl("l"),
             EditorMessage::SelectLine,
             "Select line",
         ));
 
         self.bind(KeyBinding::new(
-            Shortcut::new(Esc, KeyModifiers::NONE),
+            Shortcut::new("escape"),
             EditorMessage::ClearSelection,
             "Clear selection",
         ));
 
         // Edit operations
         self.bind(KeyBinding::new(
-            Shortcut::ctrl(Char('z')),
+            Shortcut::ctrl("z"),
             EditorMessage::Undo,
             "Undo",
         ));
 
         self.bind(KeyBinding::new(
-            Shortcut::ctrl(Char('y')),
+            Shortcut::ctrl("y"),
             EditorMessage::Redo,
             "Redo",
         ));
 
         self.bind(KeyBinding::new(
-            Shortcut::ctrl_shift(Char('z')),
+            Shortcut::ctrl_shift("z"),
             EditorMessage::Redo,
             "Redo (alternative)",
         ));
 
         self.bind(KeyBinding::new(
-            Shortcut::ctrl(Char('x')),
+            Shortcut::ctrl("x"),
             EditorMessage::Cut,
             "Cut",
         ));
 
         self.bind(KeyBinding::new(
-            Shortcut::ctrl(Char('c')),
+            Shortcut::ctrl("c"),
             EditorMessage::Copy,
             "Copy",
         ));
 
         self.bind(KeyBinding::new(
-            Shortcut::ctrl(Char('v')),
+            Shortcut::ctrl("v"),
             EditorMessage::Paste,
             "Paste",
         ));
 
         // Search
         self.bind(KeyBinding::new(
-            Shortcut::ctrl(Char('f')),
+            Shortcut::ctrl("f"),
             EditorMessage::Find("".to_string()),
             "Find",
         ));
 
         self.bind(KeyBinding::new(
-            Shortcut::new(KeyCode::F(3), KeyModifiers::NONE),
+            Shortcut::new("f3"),
             EditorMessage::FindNext,
             "Find next",
         ));
 
         self.bind(KeyBinding::new(
-            Shortcut::shift(KeyCode::F(3)),
+            Shortcut::shift("f3"),
             EditorMessage::FindPrevious,
             "Find previous",
         ));
 
         self.bind(KeyBinding::new(
-            Shortcut::ctrl(Char('h')),
+            Shortcut::ctrl("h"),
             EditorMessage::Replace("".to_string(), "".to_string()),
             "Replace",
         ));
@@ -313,25 +375,25 @@ impl ShortcutManager {
         // macOS specific bindings
         if cfg!(target_os = "macos") {
             self.bind(KeyBinding::new(
-                Shortcut::new(Left, KeyModifiers::SUPER),
+                Shortcut::from_string("super+left"),
                 EditorMessage::MoveCursor(CursorMovement::LineStart),
                 "Move to line start (macOS)",
             ));
 
             self.bind(KeyBinding::new(
-                Shortcut::new(Right, KeyModifiers::SUPER),
+                Shortcut::from_string("super+right"),
                 EditorMessage::MoveCursor(CursorMovement::LineEnd),
                 "Move to line end (macOS)",
             ));
 
             self.bind(KeyBinding::new(
-                Shortcut::new(Up, KeyModifiers::SUPER),
+                Shortcut::from_string("super+up"),
                 EditorMessage::MoveCursor(CursorMovement::DocumentStart),
                 "Move to document start (macOS)",
             ));
 
             self.bind(KeyBinding::new(
-                Shortcut::new(Down, KeyModifiers::SUPER),
+                Shortcut::from_string("super+down"),
                 EditorMessage::MoveCursor(CursorMovement::DocumentEnd),
                 "Move to document end (macOS)",
             ));

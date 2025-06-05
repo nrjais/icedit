@@ -364,6 +364,39 @@ impl Editor {
         self.cursor = Cursor::new();
         self.selection = None;
     }
+
+    /// Handle key input from widgets - simplified interface
+    pub fn handle_key_input(&mut self, input: crate::KeyInput) -> EditorResponse {
+        match input {
+            crate::KeyInput::Character(ch) => self.handle_message(EditorMessage::InsertChar(ch)),
+            crate::KeyInput::Command(cmd) => {
+                // Handle common commands
+                match cmd.as_str() {
+                    "backspace" => self.handle_message(EditorMessage::DeleteCharBackward),
+                    "delete" => self.handle_message(EditorMessage::DeleteChar),
+                    "left" => self.handle_message(EditorMessage::MoveCursor(CursorMovement::Left)),
+                    "right" => {
+                        self.handle_message(EditorMessage::MoveCursor(CursorMovement::Right))
+                    }
+                    "up" => self.handle_message(EditorMessage::MoveCursor(CursorMovement::Up)),
+                    "down" => self.handle_message(EditorMessage::MoveCursor(CursorMovement::Down)),
+                    "home" => {
+                        self.handle_message(EditorMessage::MoveCursor(CursorMovement::LineStart))
+                    }
+                    "end" => {
+                        self.handle_message(EditorMessage::MoveCursor(CursorMovement::LineEnd))
+                    }
+                    "ctrl+a" => self.handle_message(EditorMessage::SelectAll),
+                    "ctrl+c" => self.handle_message(EditorMessage::Copy),
+                    "ctrl+v" => self.handle_message(EditorMessage::Paste),
+                    "ctrl+x" => self.handle_message(EditorMessage::Cut),
+                    "ctrl+z" => self.handle_message(EditorMessage::Undo),
+                    "ctrl+y" => self.handle_message(EditorMessage::Redo),
+                    _ => EditorResponse::Success, // Unknown command
+                }
+            }
+        }
+    }
 }
 
 impl Default for Editor {

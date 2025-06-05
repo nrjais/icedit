@@ -235,10 +235,8 @@ loop {
 ## Dependencies
 
 - `ropey`: Efficient rope data structure for text
-
 - `thiserror`: Error handling
 - `crossterm`: Cross-platform terminal handling
-- `unicode-width`: Unicode text width calculations
 
 ## License
 
