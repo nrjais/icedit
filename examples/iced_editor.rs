@@ -1,8 +1,8 @@
 use std::fs;
 
 use iced::{Element, Task, Theme};
-use icedit_core::{Editor, EditorMessage, ShortcutEvent};
-use icedit_ui::{styled_editor, WidgetMessage};
+use icedit_core::Editor;
+use icedit_ui::{get_char_dimensions, styled_editor, WidgetMessage};
 
 /// Main application state
 struct EditorApp {
@@ -21,8 +21,10 @@ impl EditorApp {
         let text = fs::read_to_string("README.md").unwrap();
         let mut editor = Editor::with_text(&text);
 
-        // Initialize character dimensions only
-        editor.set_char_dimensions(8.0, 18.0);
+        // Get measured character dimensions for the font size we'll use
+        let font_size = 16.0;
+        let (char_width, line_height) = get_char_dimensions(font_size);
+        editor.set_char_dimensions(char_width, line_height);
 
         Self { editor }
     }
@@ -36,35 +38,21 @@ impl EditorApp {
             Message::Widget(widget_message) => {
                 match widget_message {
                     WidgetMessage::ShortcutEvent(shortcut_event) => {
-                        // Handle shortcut event using the core editor
-                        let _response = match shortcut_event {
-                            ShortcutEvent::EditorMessage(message) => {
-                                self.editor.handle_message(message)
-                            }
-                            ShortcutEvent::CharacterInput(ch) => {
-                                self.editor.handle_message(EditorMessage::InsertChar(ch))
-                            }
-                        };
+                        // Handle shortcut event using the core editor's new method
+                        let _response = self.editor.handle_shortcut_event(shortcut_event);
                     }
                     WidgetMessage::MousePressed(position) => {
-                        // Position is already converted by the widget
-                        let _response = self
-                            .editor
-                            .handle_message(EditorMessage::MoveCursorTo(position));
+                        // Handle mouse click using the core editor's new method
+                        let _response = self.editor.handle_mouse_click(position);
                     }
                     WidgetMessage::Scroll(delta, bounds) => {
-                        // Dynamically update viewport size based on widget bounds
-                        self.editor.set_viewport_size(
+                        // Handle scrolling using the core editor's new method
+                        let _response = self.editor.handle_scroll(
+                            delta.x,
+                            delta.y,
                             bounds.viewport_size.width,
                             bounds.viewport_size.height,
                         );
-                        // Handle scrolling using the core editor's viewport management
-                        let current_offset = self.editor.viewport().scroll_offset;
-                        let new_offset = (current_offset.0 + delta.x, current_offset.1 + delta.y);
-                        let clamped_offset = bounds
-                            .clamp_scroll_offset(iced::Vector::new(new_offset.0, new_offset.1));
-                        self.editor
-                            .set_scroll_offset(clamped_offset.x, clamped_offset.y);
                     }
                     WidgetMessage::MouseReleased(_position) => {
                         // Handle mouse release events if needed

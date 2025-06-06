@@ -1,6 +1,6 @@
 use crate::{
     messages::{CursorMovement, EditorEvent, EditorResponse},
-    Buffer, Cursor, EditorMessage, Position, Selection,
+    Buffer, Cursor, EditorMessage, Position, Selection, ShortcutEvent,
 };
 
 /// Information about a partially visible line for smooth scrolling
@@ -817,6 +817,42 @@ impl Editor {
                     _ => EditorResponse::Success, // Unknown command
                 }
             }
+        }
+    }
+
+    /// Handle scroll operations with automatic viewport management
+    pub fn handle_scroll(
+        &mut self,
+        delta_x: f32,
+        delta_y: f32,
+        viewport_width: f32,
+        viewport_height: f32,
+    ) -> EditorResponse {
+        // Update viewport size if provided
+        self.set_viewport_size(viewport_width, viewport_height);
+
+        // Handle scrolling using the core editor's viewport management
+        let current_offset = self.viewport.scroll_offset;
+        let new_offset = (current_offset.0 + delta_x, current_offset.1 + delta_y);
+
+        // Clamp the scroll offset to valid bounds
+        let line_count = self.buffer.line_count();
+        let clamped_offset = self.viewport.clamp_scroll_offset(new_offset, line_count);
+        self.set_scroll_offset(clamped_offset.0, clamped_offset.1);
+
+        EditorResponse::Success
+    }
+
+    /// Handle mouse click at a specific position
+    pub fn handle_mouse_click(&mut self, position: Position) -> EditorResponse {
+        self.handle_message(EditorMessage::MoveCursorTo(position))
+    }
+
+    /// Handle shortcut events (keyboard shortcuts and character input)
+    pub fn handle_shortcut_event(&mut self, shortcut_event: ShortcutEvent) -> EditorResponse {
+        match shortcut_event {
+            ShortcutEvent::EditorMessage(message) => self.handle_message(message),
+            ShortcutEvent::CharacterInput(ch) => self.handle_message(EditorMessage::InsertChar(ch)),
         }
     }
 }

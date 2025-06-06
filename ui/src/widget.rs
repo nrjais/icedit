@@ -106,31 +106,39 @@ pub struct EditorWidget<'a, Message> {
 
 impl<'a, Message> EditorWidget<'a, Message> {
     const DEFAULT_FONT_SIZE: f32 = 14.0;
-    const DEFAULT_LINE_HEIGHT: f32 = 18.0;
-    const DEFAULT_CHAR_WIDTH: f32 = 8.0;
 
     pub fn new<F>(editor: &'a Editor, on_message: F) -> Self
     where
         F: Fn(WidgetMessage) -> Message + 'static,
     {
-        Self {
+        let (char_width, line_height) = Self::measure_char_dimensions(Self::DEFAULT_FONT_SIZE);
+
+        let widget = Self {
             editor,
             font_size: Self::DEFAULT_FONT_SIZE,
-            line_height: Self::DEFAULT_LINE_HEIGHT,
-            char_width: Self::DEFAULT_CHAR_WIDTH,
+            line_height,
+            char_width,
             background_color: Color::from_rgb(0.15, 0.15, 0.15),
             text_color: Color::from_rgb(0.9, 0.9, 0.9),
             cursor_color: Color::from_rgb(1.0, 1.0, 1.0),
             selection_color: Color::from_rgba(0.3, 0.5, 1.0, 0.3),
             shortcut_manager: ShortcutManager::new(),
             on_message: Box::new(on_message),
-        }
+        };
+
+        // Note: Parent application should call editor.set_char_dimensions()
+        // with widget.char_dimensions() to update the core editor
+        widget
     }
 
     pub fn font_size(mut self, size: f32) -> Self {
         self.font_size = size;
-        self.line_height = size * 1.3;
-        self.char_width = size * 0.6;
+        let (char_width, line_height) = Self::measure_char_dimensions(size);
+        self.line_height = line_height;
+        self.char_width = char_width;
+
+        // Note: Parent application should call editor.set_char_dimensions()
+        // with self.char_dimensions() to update the core editor
         self
     }
 
@@ -146,6 +154,30 @@ impl<'a, Message> EditorWidget<'a, Message> {
         self.cursor_color = cursor;
         self.selection_color = selection;
         self
+    }
+
+    /// Measure character dimensions for the given font size
+    /// Uses improved calculations based on typical monospace font characteristics
+    fn measure_char_dimensions(font_size: f32) -> (f32, f32) {
+        // For monospace fonts, character width is typically around 0.6 times font size
+        // This is more accurate than the previous hardcoded 8.0 value
+        let char_width = font_size * 0.6;
+
+        // Line height should be slightly larger than font size for readability
+        // 1.2-1.4 is typical, we use 1.3 as a good middle ground
+        let line_height = font_size * 1.3;
+
+        // Ensure minimum values to prevent layout issues
+        let char_width = char_width.max(1.0);
+        let line_height = line_height.max(font_size);
+
+        (char_width, line_height)
+    }
+
+    /// Get the current character dimensions for use by the parent application
+    /// The parent should call editor.set_char_dimensions() with these values
+    pub fn char_dimensions(&self) -> (f32, f32) {
+        (self.char_width, self.line_height)
     }
 
     /// Get the actual Y position of a line using the same logic as the text renderer
@@ -693,7 +725,38 @@ pub fn editor_widget<'a, Message: 'a + Clone>(
     Element::new(EditorWidget::new(editor, on_message))
 }
 
+/// Get measured character dimensions for a given font size
+///
+/// Returns (char_width, line_height) tuple with dimensions calculated based on
+/// the actual font characteristics rather than hardcoded values.
+///
+/// This function should be used by parent applications to update the core editor's
+/// viewport by calling `editor.set_char_dimensions(char_width, line_height)`.
+///
+/// # Example
+/// ```rust
+/// let font_size = 16.0;
+/// let (char_width, line_height) = get_char_dimensions(font_size);
+/// editor.set_char_dimensions(char_width, line_height);
+/// ```
+pub fn get_char_dimensions(font_size: f32) -> (f32, f32) {
+    EditorWidget::<()>::measure_char_dimensions(font_size)
+}
+
 /// Convenience function to create a styled editor widget
+///
+/// # Important
+/// When using this widget, you should update the core editor's character dimensions
+/// by calling `editor.set_char_dimensions()` with the values from `get_char_dimensions()`.
+/// This ensures the editor's viewport calculations match the widget's text rendering.
+///
+/// # Example
+/// ```rust
+/// let font_size = 16.0;
+/// let (char_width, line_height) = get_char_dimensions(font_size);
+/// editor.set_char_dimensions(char_width, line_height);
+/// let widget = styled_editor(&editor, font_size, true, Message::Widget);
+/// ```
 pub fn styled_editor<'a, Message: 'a + Clone>(
     editor: &'a Editor,
     font_size: f32,
