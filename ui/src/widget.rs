@@ -2,17 +2,14 @@ use iced::{
     advanced::{
         layout::{self, Layout},
         renderer::{self, Quad},
-        widget::{self, Widget},
-        Clipboard, Shell,
+        widget::Tree,
+        Clipboard, Shell, Widget,
     },
     mouse, Color, Element, Event, Font, Length, Point, Rectangle, Size, Theme, Vector,
 };
 use icedit_core::{
     Editor, Key, KeyEvent, Modifiers, NamedKey, Position, Selection, ShortcutEvent, ShortcutManager,
 };
-
-// Use Iced's SmolStr directly
-type IcedSmolStr = iced::advanced::graphics::core::SmolStr;
 
 /// State that should be passed from outside to the widget
 #[derive(Debug, Clone)]
@@ -306,9 +303,9 @@ impl<'a, Message> EditorWidget<'a, Message> {
     /// Convert Iced key events to core KeyEvent
     fn convert_key_event(
         &self,
-        key: &iced::keyboard::Key<IcedSmolStr>,
-        modifiers: iced::keyboard::Modifiers,
-        text: Option<IcedSmolStr>,
+        key: &iced::keyboard::Key<String>,
+        modifiers: &iced::keyboard::Modifiers,
+        text: Option<&str>,
     ) -> Option<KeyEvent> {
         // Convert modifiers
         let core_modifiers = Modifiers {
@@ -351,17 +348,15 @@ impl<'a, Message> EditorWidget<'a, Message> {
                 _ => None,
             },
             iced::keyboard::Key::Character(c) => {
-                if let Some(text) = &text {
-                    let text_str = text.as_str();
-                    if text_str.len() == 1 {
-                        Some(Key::Character(text_str.chars().next().unwrap()))
+                if let Some(text) = text {
+                    if text.len() == 1 {
+                        Some(Key::Character(text.chars().next().unwrap()))
                     } else {
                         None
                     }
                 } else {
-                    let c_str = c.as_str();
-                    if c_str.len() == 1 {
-                        Some(Key::Character(c_str.chars().next().unwrap()))
+                    if c.len() == 1 {
+                        Some(Key::Character(c.chars().next().unwrap()))
                     } else {
                         None
                     }
@@ -388,7 +383,7 @@ where
 
     fn layout(
         &self,
-        _tree: &mut widget::Tree,
+        _tree: &mut Tree,
         _renderer: &Renderer,
         limits: &layout::Limits,
     ) -> layout::Node {
@@ -404,7 +399,7 @@ where
 
     fn draw(
         &self,
-        _tree: &widget::Tree,
+        _tree: &Tree,
         renderer: &mut Renderer,
         _theme: &Theme,
         _style: &renderer::Style,
@@ -420,6 +415,7 @@ where
                 bounds,
                 border: iced::Border::default(),
                 shadow: iced::Shadow::default(),
+                snap: false,
             },
             self.background_color,
         );
@@ -443,6 +439,7 @@ where
                         bounds: selection_bounds,
                         border: iced::Border::default(),
                         shadow: iced::Shadow::default(),
+                        snap: false,
                     },
                     self.selection_color,
                 );
@@ -504,6 +501,7 @@ where
                                         bounds: selection_bounds,
                                         border: iced::Border::default(),
                                         shadow: iced::Shadow::default(),
+                                        snap: false,
                                     },
                                     self.selection_color,
                                 );
@@ -537,8 +535,8 @@ where
                     bounds: Size::new(bounds.width, self.line_height),
                     size: iced::Pixels(self.font_size),
                     font: Font::MONOSPACE,
-                    horizontal_alignment: iced::alignment::Horizontal::Left,
-                    vertical_alignment: iced::alignment::Vertical::Top,
+                    align_x: iced::advanced::text::Alignment::Left,
+                    align_y: iced::alignment::Vertical::Top,
                     line_height: iced::widget::text::LineHeight::Absolute(iced::Pixels(
                         self.line_height,
                     )),
@@ -578,25 +576,24 @@ where
                     bounds: cursor_bounds,
                     border: iced::Border::default(),
                     shadow: iced::Shadow::default(),
+                    snap: false,
                 },
                 self.cursor_color,
             );
         }
     }
 
-    fn on_event(
+    fn update(
         &mut self,
-        _tree: &mut widget::Tree,
-        event: Event,
+        _tree: &mut Tree,
+        event: &Event,
         layout: Layout<'_>,
         cursor: mouse::Cursor,
         _renderer: &Renderer,
         _clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
         _viewport: &Rectangle,
-    ) -> iced::advanced::graphics::core::event::Status {
-        use iced::advanced::graphics::core::event::Status;
-
+    ) {
         match event {
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
                 if let Some(cursor_position) = cursor.position_in(layout.bounds()) {
@@ -607,7 +604,6 @@ where
                     let editor_position = self.point_to_position(relative_position);
                     let message = (self.on_message)(WidgetMessage::MousePressed(editor_position));
                     shell.publish(message);
-                    return Status::Captured;
                 }
             }
             Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
@@ -619,7 +615,6 @@ where
                     let editor_position = self.point_to_position(relative_position);
                     let message = (self.on_message)(WidgetMessage::MouseReleased(editor_position));
                     shell.publish(message);
-                    return Status::Captured;
                 }
             }
             Event::Mouse(mouse::Event::CursorMoved { .. }) => {
@@ -631,7 +626,6 @@ where
                     let editor_position = self.point_to_position(relative_position);
                     let message = (self.on_message)(WidgetMessage::MouseMoved(editor_position));
                     shell.publish(message);
-                    return Status::Captured;
                 }
             }
             Event::Keyboard(iced::keyboard::Event::KeyPressed {
@@ -641,13 +635,21 @@ where
                 ..
             }) => {
                 // Convert key events to core KeyEvent and handle with shortcut manager
-                if let Some(key_event) = self.convert_key_event(&key, modifiers, text) {
+                let key_string = match key {
+                    iced::keyboard::Key::Named(named) => iced::keyboard::Key::Named(*named),
+                    iced::keyboard::Key::Character(smol_str) => {
+                        iced::keyboard::Key::Character(smol_str.to_string())
+                    }
+                    iced::keyboard::Key::Unidentified => iced::keyboard::Key::Unidentified,
+                };
+                if let Some(key_event) =
+                    self.convert_key_event(&key_string, &modifiers, text.as_deref())
+                {
                     if let Some(shortcut_event) = self.shortcut_manager.handle_key_event(key_event)
                     {
                         let message =
                             (self.on_message)(WidgetMessage::ShortcutEvent(shortcut_event));
                         shell.publish(message);
-                        return Status::Captured;
                     }
                 }
             }
@@ -677,12 +679,9 @@ where
 
                 let message = (self.on_message)(WidgetMessage::Scroll(scroll_delta, scroll_bounds));
                 shell.publish(message);
-                return Status::Captured;
             }
             _ => {}
         }
-
-        Status::Ignored
     }
 }
 

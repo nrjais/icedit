@@ -6,7 +6,10 @@ description = "UI components and shortcut management for the IcEdit text editor"
 
 [dependencies]
 icedit-core = { path = "../core" }
-iced = { version = "0.13", features = ["canvas", "advanced"] }
+iced = { features = [
+  "canvas",
+  "advanced",
+], git = "https://github.com/iced-rs/iced.git", branch = "master" }
 
 [dev-dependencies]
 tokio = { workspace = true }

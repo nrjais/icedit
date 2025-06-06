@@ -16,7 +16,7 @@ description = "A modular text editor with core and UI components"
 [dependencies]
 icedit-core = { path = "core" }
 icedit-ui = { path = "ui" }
-iced = { version = "0.13", features = ["canvas", "advanced"] }
+iced = { features = ["canvas", "advanced", "debug"] , git = "https://github.com/iced-rs/iced.git", branch = "master"}
 
 [[example]]
 name = "iced_editor"

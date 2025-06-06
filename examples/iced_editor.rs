@@ -21,15 +21,14 @@ impl EditorApp {
         let text = fs::read_to_string("README.md").unwrap();
         let mut editor = Editor::with_text(&text);
 
-        // Initialize viewport with reasonable defaults
-        editor.set_viewport_size(800.0, 600.0);
+        // Initialize character dimensions only
         editor.set_char_dimensions(8.0, 18.0);
 
         Self { editor }
     }
 
     fn title(&self) -> String {
-        "IcEdit - Iced Text Editor".to_string()
+        "Iced Text Editor".to_string()
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
@@ -54,6 +53,11 @@ impl EditorApp {
                             .handle_message(EditorMessage::MoveCursorTo(position));
                     }
                     WidgetMessage::Scroll(delta, bounds) => {
+                        // Dynamically update viewport size based on widget bounds
+                        self.editor.set_viewport_size(
+                            bounds.viewport_size.width,
+                            bounds.viewport_size.height,
+                        );
                         // Handle scrolling using the core editor's viewport management
                         let current_offset = self.editor.viewport().scroll_offset;
                         let new_offset = (current_offset.0 + delta.x, current_offset.1 + delta.y);
@@ -97,5 +101,5 @@ impl Default for EditorApp {
 }
 
 fn main() -> iced::Result {
-    iced::run("IcEdit", EditorApp::update, EditorApp::view)
+    iced::run(EditorApp::update, EditorApp::view)
 }
