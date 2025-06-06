@@ -1,4 +1,4 @@
-use crate::Position;
+use crate::{text_utils::is_word_boundary, Position};
 use ropey::Rope;
 
 /// Represents a text selection range
@@ -103,7 +103,7 @@ impl Selection {
         let text = rope.slice(..);
         let ch = text.char(offset);
 
-        if ch.is_whitespace() || ch.is_ascii_punctuation() {
+        if is_word_boundary(ch) {
             return None;
         }
 
@@ -111,7 +111,7 @@ impl Selection {
         let mut start_offset = offset;
         while start_offset > 0 {
             let prev_ch = text.char(start_offset - 1);
-            if prev_ch.is_whitespace() || prev_ch.is_ascii_punctuation() {
+            if is_word_boundary(prev_ch) {
                 break;
             }
             start_offset -= 1;
@@ -121,7 +121,7 @@ impl Selection {
         let mut end_offset = offset;
         while end_offset < rope.len_bytes() {
             let ch = text.char(end_offset);
-            if ch.is_whitespace() || ch.is_ascii_punctuation() {
+            if is_word_boundary(ch) {
                 break;
             }
             end_offset += 1;

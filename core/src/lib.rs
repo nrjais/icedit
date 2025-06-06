@@ -5,6 +5,7 @@ pub mod keys;
 pub mod messages;
 pub mod selection;
 pub mod shortcuts;
+pub mod text_utils;
 
 pub use buffer::Buffer;
 pub use cursor::{Cursor, Position};
@@ -13,6 +14,7 @@ pub use keys::{Key, KeyEvent, Modifiers, NamedKey};
 pub use messages::{CursorMovement, EditorEvent, EditorMessage, EditorResponse};
 pub use selection::Selection;
 pub use shortcuts::{KeyBinding, Shortcut, ShortcutEvent, ShortcutManager};
+pub use text_utils::is_word_boundary;
 
 /// Key event for widget integration
 #[derive(Debug, Clone)]
