@@ -256,10 +256,6 @@ impl<'a, Message> EditorWidget<'a, Message> {
             ((point.y + viewport.scroll_offset.1) / self.line_height).max(0.0) as usize
         };
 
-        // Calculate initial column based on x position
-        let _raw_column =
-            ((point.x + viewport.scroll_offset.0) / self.char_width).max(0.0) as usize;
-
         // Clamp to valid buffer bounds
         let buffer = self.editor.current_buffer();
         let max_line = buffer.line_count().saturating_sub(1);
@@ -268,49 +264,39 @@ impl<'a, Message> EditorWidget<'a, Message> {
         // Get actual line content and calculate proper column position
         let clamped_column = if let Some(line_rope) = buffer.rope().get_line(clamped_line) {
             let line_str = line_rope.to_string();
-            // Remove trailing newline if present for accurate length calculation
             let line_content = line_str.trim_end_matches('\n');
             let line_length = line_content.chars().count();
 
             if line_length == 0 {
-                // Empty line, position at start
                 0
             } else {
-                // For non-empty lines, find the closest valid character position
-                let mut char_pos = 0;
+                let click_x = point.x + viewport.scroll_offset.0;
                 let mut pixel_pos = 0.0;
+                let mut column = 0;
+                let mut found = false;
 
-                for (i, ch) in line_content.char_indices() {
+                for ch in line_content.chars() {
                     let char_width = if ch == '\t' {
-                        // Tab width is typically 4 or 8 characters
                         self.char_width * 4.0
                     } else {
                         self.char_width
                     };
-
-                    // Check if we're past the click position
-                    if pixel_pos + char_width / 2.0 > point.x + viewport.scroll_offset.0 {
+                    // If click is before the center of this char, stop
+                    if click_x < pixel_pos + char_width / 2.0 {
+                        found = true;
                         break;
                     }
-
-                    char_pos = i + ch.len_utf8();
                     pixel_pos += char_width;
+                    column += 1;
                 }
-
-                // Convert byte position to character position
-                let char_column = line_content[..char_pos].chars().count();
-
-                // Allow positioning beyond the end of the line for selection purposes
-                let click_x = point.x + viewport.scroll_offset.0;
-                if click_x > pixel_pos {
-                    // Clicked beyond the last character, position at end of line + 1
+                // If click is past the last character, allow placing at end
+                if !found {
                     line_length
                 } else {
-                    char_column.min(line_length)
+                    column
                 }
             }
         } else {
-            // Invalid line, position at start
             0
         };
 
@@ -394,7 +380,10 @@ where
     Renderer: iced::advanced::Renderer + iced::advanced::text::Renderer<Font = Font>,
 {
     fn size(&self) -> Size<Length> {
-        Size::new(Length::Fill, Length::Fill)
+        // Fill width, but use content height for height
+        let line_count = self.editor.current_buffer().line_count();
+        let content_height = (line_count as f32 * self.line_height).max(self.line_height);
+        Size::new(Length::Fill, Length::Fixed(content_height))
     }
 
     fn layout(
@@ -403,7 +392,14 @@ where
         _renderer: &Renderer,
         limits: &layout::Limits,
     ) -> layout::Node {
-        layout::Node::new(limits.max())
+        // Use the minimum of content height and the parent's max height
+        let line_count = self.editor.current_buffer().line_count();
+        let content_height = (line_count as f32 * self.line_height).max(self.line_height);
+        let max = limits.max();
+        let width = max.width;
+        let height = content_height.min(max.height);
+        let size = Size::new(width, height);
+        layout::Node::new(size)
     }
 
     fn draw(
