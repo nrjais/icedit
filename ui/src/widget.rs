@@ -1,7 +1,8 @@
+use crate::renderer::EditorRenderer;
 use iced::{
     advanced::{
         layout::{self, Layout},
-        renderer::{self, Quad},
+        renderer::{self},
         widget::Tree,
         Clipboard, Shell, Widget,
     },
@@ -177,76 +178,6 @@ impl<'a, Message> EditorWidget<'a, Message> {
     /// The parent should call editor.set_char_dimensions() with these values
     pub fn char_dimensions(&self) -> (f32, f32) {
         (self.char_width, self.line_height)
-    }
-
-    /// Get the actual Y position of a line using the same logic as the text renderer
-    fn get_line_y_position(&self, line_index: usize) -> f32 {
-        let visible_lines_with_partial = self.editor.get_visible_lines_with_partial();
-
-        // Find the line in the visible lines
-        for (_, partial_line) in &visible_lines_with_partial {
-            if partial_line.line_index == line_index {
-                return partial_line.y_offset;
-            }
-        }
-
-        // If not found in visible lines, calculate based on line height and viewport scroll
-        // This is a fallback for lines that might not be visible
-        let viewport = self.editor.viewport();
-        line_index as f32 * self.line_height - viewport.scroll_offset.1
-    }
-
-    fn position_to_point(&self, position: Position) -> Point {
-        let viewport = self.editor.viewport();
-
-        // Calculate x position by measuring actual character widths
-        let x_pos = if let Some(line_rope) =
-            self.editor.current_buffer().rope().get_line(position.line)
-        {
-            let line_str = line_rope.to_string();
-            let line_content = line_str.trim_end_matches('\n');
-
-            let mut pixel_pos = 0.0;
-            let mut char_count = 0;
-
-            // Allow positioning at the end of the line (after last character)
-            for ch in line_content.chars() {
-                if char_count >= position.column {
-                    break;
-                }
-
-                let char_width = if ch == '\t' {
-                    // Tab width is typically 4 or 8 characters
-                    self.char_width * 4.0
-                } else {
-                    self.char_width
-                };
-
-                pixel_pos += char_width;
-                char_count += 1;
-            }
-
-            // If position.column is at or beyond the end of line, position after the last character
-            if position.column >= line_content.chars().count() {
-                // Continue to position after last character
-                while char_count < position.column && char_count < line_content.chars().count() {
-                    char_count += 1;
-                }
-            }
-
-            pixel_pos
-        } else {
-            // Invalid line, position at start
-            0.0
-        };
-
-        // Use the same line positioning logic as the text renderer
-        let y_pos = self.get_line_y_position(position.line);
-
-        Point::new(
-            x_pos - viewport.scroll_offset.0,
-            y_pos, // y_offset is already relative to widget bounds
-        )
     }
 
     /// Convert screen point to editor position (line/column)
@@ -454,135 +385,19 @@ where
     ) {
         let bounds = layout.bounds();
 
-        // Draw background
-        renderer.fill_quad(
-            Quad {
-                bounds,
-                border: iced::Border::default(),
-                shadow: iced::Shadow::default(),
-                snap: false,
-            },
+        // Create optimized renderer for this frame
+        let mut optimized_renderer = EditorRenderer::new(
+            self.font_size,
+            self.line_height,
+            self.char_width,
             self.background_color,
+            self.text_color,
+            self.cursor_color,
+            self.selection_color,
         );
 
-        // Get visible lines with partial line information for smooth scrolling
-        let visible_lines_with_partial = self.editor.get_visible_lines_with_partial();
-        let viewport = self.editor.viewport();
-        let selection = self.editor.current_selection();
-
-        // Draw text and selection in a single loop over visible lines for efficiency
-        for (line_content, partial_line) in visible_lines_with_partial.iter() {
-            let line_index = partial_line.line_index;
-
-            // Calculate visible height for this line (for clipping)
-            let visible_height =
-                self.line_height - partial_line.clip_top - partial_line.clip_bottom;
-
-            // Text position
-            let text_position = Point::new(
-                bounds.x - viewport.scroll_offset.0,
-                bounds.y + partial_line.y_offset,
-            );
-
-            // Draw selection for this line if it's within the selection range
-            if let Some(selection) = selection {
-                if line_index >= selection.start.line && line_index <= selection.end.line {
-                    let start_column = if line_index == selection.start.line {
-                        selection.start.column
-                    } else {
-                        0
-                    };
-                    let end_column = if line_index == selection.end.line {
-                        selection.end.column
-                    } else {
-                        line_content.chars().count()
-                    };
-                    let start_x = self
-                        .position_to_point(Position::new(line_index, start_column))
-                        .x;
-                    let end_x = self
-                        .position_to_point(Position::new(line_index, end_column))
-                        .x;
-
-                    // Only draw selection if line has content
-                    if end_x > start_x && start_x < end_x {
-                        let selection_y = bounds.y + partial_line.y_offset + partial_line.clip_top;
-                        let selection_bounds = Rectangle::new(
-                            Point::new(start_x + bounds.x - viewport.scroll_offset.0, selection_y),
-                            Size::new(end_x - start_x, visible_height),
-                        );
-
-                        renderer.fill_quad(
-                            Quad {
-                                bounds: selection_bounds,
-                                border: iced::Border::default(),
-                                shadow: iced::Shadow::default(),
-                                snap: false,
-                            },
-                            self.selection_color,
-                        );
-                    }
-                }
-            }
-
-            // Draw text
-            let text_bounds = Rectangle::new(
-                Point::new(text_position.x, text_position.y + partial_line.clip_top),
-                Size::new(bounds.width, visible_height),
-            );
-
-            renderer.fill_text(
-                iced::advanced::text::Text {
-                    content: line_content.to_string(),
-                    bounds: Size::new(bounds.width, self.line_height),
-                    size: iced::Pixels(self.font_size),
-                    font: Font::MONOSPACE,
-                    align_x: iced::advanced::text::Alignment::Left,
-                    align_y: iced::alignment::Vertical::Top,
-                    line_height: iced::widget::text::LineHeight::Absolute(iced::Pixels(
-                        self.line_height,
-                    )),
-                    shaping: iced::advanced::text::Shaping::Advanced,
-                    wrapping: iced::advanced::text::Wrapping::None,
-                },
-                text_position,
-                self.text_color,
-                text_bounds,
-            );
-        }
-
-        // Draw cursor with proper height based on font size
-        let cursor_position = self.editor.current_cursor().position();
-        let cursor_point = self.position_to_point(cursor_position);
-
-        // Calculate cursor dimensions based on font size
-        let cursor_width = 2.0;
-        let cursor_height = self.font_size * 1.2; // Slightly taller than font for better visibility
-
-        // Only draw cursor if it's visible in the viewport
-        let cursor_screen_x = cursor_point.x + bounds.x;
-        let cursor_screen_y = cursor_point.y + bounds.y;
-
-        // Check if cursor is within visible bounds (with some tolerance for cursor width)
-        if cursor_screen_x >= bounds.x - cursor_width
-            && cursor_screen_x <= bounds.x + bounds.width
-            && cursor_screen_y >= bounds.y
-            && cursor_screen_y + cursor_height <= bounds.y + bounds.height
-        {
-            let cursor_bounds = Rectangle::new(
-                Point::new(cursor_screen_x, cursor_screen_y),
-                Size::new(cursor_width, cursor_height),
-            );
-            renderer.fill_quad(
-                Quad {
-                    bounds: cursor_bounds,
-                    border: iced::Border::default(),
-                    shadow: iced::Shadow::default(),
-                    snap: false,
-                },
-                self.cursor_color,
-            );
-        }
+        // Use the extremely optimized renderer
+        optimized_renderer.render(self.editor, renderer, bounds);
     }
 
     fn update(
