@@ -9,6 +9,30 @@ use iced::{
 use icedit_core::{Editor, Position, Selection};
 use std::collections::VecDeque;
 
+/// Scrollbar information for rendering
+#[derive(Debug, Clone, Copy)]
+pub struct ScrollbarInfo {
+    /// Whether this scrollbar should be visible
+    pub visible: bool,
+    /// Track bounds (background of scrollbar)
+    pub track_bounds: Rectangle,
+    /// Thumb bounds (draggable part)
+    pub thumb_bounds: Rectangle,
+    /// Scroll ratio (0.0 to 1.0)
+    pub scroll_ratio: f32,
+}
+
+impl Default for ScrollbarInfo {
+    fn default() -> Self {
+        Self {
+            visible: false,
+            track_bounds: Rectangle::default(),
+            thumb_bounds: Rectangle::default(),
+            scroll_ratio: 0.0,
+        }
+    }
+}
+
 /// Extremely optimized renderer for the editor widget using advanced techniques
 pub struct EditorRenderer {
     // Core rendering properties
@@ -20,11 +44,23 @@ pub struct EditorRenderer {
     cursor_color: Color,
     selection_color: Color,
 
+    // Scrollbar properties
+    scrollbar_width: f32,
+    scrollbar_track_color: Color,
+    scrollbar_thumb_color: Color,
+    scrollbar_thumb_hover_color: Color,
+    min_scrollbar_thumb_size: f32,
+
     // Optimization caches and pools
     text_operation_pool: VecDeque<TextOperation>,
     last_viewport: Option<Viewport>,
     last_cursor_position: Option<Position>,
     last_selection: Option<Selection>,
+
+    // Scrollbar state caching
+    last_vertical_scrollbar: Option<ScrollbarInfo>,
+    last_horizontal_scrollbar: Option<ScrollbarInfo>,
+    last_content_dimensions: Option<(f32, f32)>, // (width, height)
 
     // Pre-computed constants for hot paths
     cursor_width: f32,
@@ -60,11 +96,23 @@ impl EditorRenderer {
             cursor_color,
             selection_color,
 
+            // Scrollbar styling
+            scrollbar_width: 12.0,
+            scrollbar_track_color: Color::from_rgba(0.5, 0.5, 0.5, 0.2),
+            scrollbar_thumb_color: Color::from_rgba(0.6, 0.6, 0.6, 0.8),
+            scrollbar_thumb_hover_color: Color::from_rgba(0.7, 0.7, 0.7, 0.9),
+            min_scrollbar_thumb_size: 16.0,
+
             // Initialize pools with reasonable capacity
             text_operation_pool: VecDeque::with_capacity(64),
             last_viewport: None,
             last_cursor_position: None,
             last_selection: None,
+
+            // Scrollbar cache
+            last_vertical_scrollbar: None,
+            last_horizontal_scrollbar: None,
+            last_content_dimensions: None,
 
             // Pre-compute constants
             cursor_width: 2.0,
@@ -153,6 +201,20 @@ impl EditorRenderer {
     ) where
         Renderer: iced::advanced::Renderer + iced::advanced::text::Renderer<Font = Font>,
     {
+        // Calculate content dimensions for scrollbar visibility
+        let content_dimensions = self.calculate_content_dimensions(editor);
+
+        // Calculate scrollbar info (lazy - only if needed)
+        let (vertical_scrollbar, horizontal_scrollbar) =
+            self.calculate_scrollbars(viewport, bounds, content_dimensions);
+
+        // Adjust editor content bounds to account for scrollbars
+        let editor_bounds = self.calculate_editor_content_bounds(
+            bounds,
+            vertical_scrollbar.visible,
+            horizontal_scrollbar.visible,
+        );
+
         // Step 1: Draw background
         self.draw_background(renderer, bounds);
 
@@ -161,7 +223,7 @@ impl EditorRenderer {
 
         // Step 3: Batch all operations with zero-allocation hot path
         let (text_ops, selection_quads) =
-            self.prepare_render_operations(&visible_lines, bounds, viewport, selection);
+            self.prepare_render_operations(&visible_lines, editor_bounds, viewport, selection);
 
         // Step 4: Batch render selections first (behind text)
         self.render_selections_batched(renderer, &selection_quads);
@@ -169,8 +231,261 @@ impl EditorRenderer {
         // Step 5: Batch render all text operations
         self.render_text_batched(renderer, &text_ops);
 
-        // Step 6: Draw cursor last (on top)
-        self.draw_cursor_optimized(renderer, bounds, cursor_position, viewport);
+        // Step 6: Draw cursor (on top of text)
+        self.draw_cursor_optimized(renderer, editor_bounds, cursor_position, viewport);
+
+        // Step 7: Draw scrollbars last (on top of everything)
+        self.render_scrollbars(renderer, vertical_scrollbar, horizontal_scrollbar);
+
+        // Update scrollbar cache
+        self.last_vertical_scrollbar = Some(vertical_scrollbar);
+        self.last_horizontal_scrollbar = Some(horizontal_scrollbar);
+        self.last_content_dimensions = Some(content_dimensions);
+    }
+
+    /// Calculate the total content dimensions for scrollbar calculations
+    fn calculate_content_dimensions(&self, editor: &Editor) -> (f32, f32) {
+        let rope = editor.current_buffer().rope();
+        let line_count = rope.len_lines();
+
+        // Calculate content height
+        let content_height = line_count as f32 * self.line_height;
+
+        // Calculate content width by finding the longest line
+        let mut max_width: f32 = 0.0;
+        for line_idx in 0..line_count.min(1000) {
+            // Limit to avoid performance issues
+            if let Some(line) = rope.get_line(line_idx) {
+                let line_str = line.to_string();
+                let width = self.calculate_line_width(&line_str);
+                max_width = max_width.max(width);
+            }
+        }
+
+        // Add some padding to content width
+        let content_width = max_width + self.char_width * 4.0;
+
+        (content_width, content_height)
+    }
+
+    /// Calculate the width of a line accounting for tabs
+    fn calculate_line_width(&self, line: &str) -> f32 {
+        let mut width = 0.0;
+        for ch in line.chars() {
+            if ch == '\t' {
+                // Tab alignment to next tab stop
+                let tab_stop = ((width / self.tab_width).floor() + 1.0) * self.tab_width;
+                width = tab_stop;
+            } else if ch != '\n' {
+                width += self.char_width;
+            }
+        }
+        width
+    }
+
+    /// Calculate scrollbar visibility and positions (lazy evaluation)
+    fn calculate_scrollbars(
+        &mut self,
+        viewport: &Viewport,
+        bounds: Rectangle,
+        content_dimensions: (f32, f32),
+    ) -> (ScrollbarInfo, ScrollbarInfo) {
+        let (content_width, content_height) = content_dimensions;
+
+        // Check if we can use cached values
+        if let (Some(last_content), Some(last_v_scroll), Some(last_h_scroll)) = (
+            self.last_content_dimensions,
+            self.last_vertical_scrollbar,
+            self.last_horizontal_scrollbar,
+        ) {
+            // Use cache if content dimensions and viewport haven't changed significantly
+            if (last_content.0 - content_width).abs() < 1.0
+                && (last_content.1 - content_height).abs() < 1.0
+                && self.last_viewport.as_ref().map_or(false, |v| {
+                    (v.size.0 - viewport.size.0).abs() < 1.0
+                        && (v.size.1 - viewport.size.1).abs() < 1.0
+                })
+            {
+                return (last_v_scroll, last_h_scroll);
+            }
+        }
+
+        // Calculate vertical scrollbar
+        let vertical_scrollbar = if content_height > viewport.size.1 {
+            let track_height = bounds.height
+                - if content_width > viewport.size.0 {
+                    self.scrollbar_width
+                } else {
+                    0.0
+                };
+
+            let thumb_height = f32::max(
+                viewport.size.1 / content_height * track_height,
+                self.min_scrollbar_thumb_size,
+            );
+
+            let scroll_range = content_height - viewport.size.1;
+            let scroll_ratio = if scroll_range > 0.0 {
+                viewport.scroll_offset.1 / scroll_range
+            } else {
+                0.0
+            };
+
+            let thumb_y = scroll_ratio * (track_height - thumb_height);
+
+            ScrollbarInfo {
+                visible: true,
+                track_bounds: Rectangle::new(
+                    Point::new(bounds.x + bounds.width - self.scrollbar_width, bounds.y),
+                    Size::new(self.scrollbar_width, track_height),
+                ),
+                thumb_bounds: Rectangle::new(
+                    Point::new(
+                        bounds.x + bounds.width - self.scrollbar_width,
+                        bounds.y + thumb_y,
+                    ),
+                    Size::new(self.scrollbar_width, thumb_height),
+                ),
+                scroll_ratio,
+            }
+        } else {
+            ScrollbarInfo::default()
+        };
+
+        // Calculate horizontal scrollbar
+        let horizontal_scrollbar = if content_width > viewport.size.0 {
+            let track_width = bounds.width
+                - if vertical_scrollbar.visible {
+                    self.scrollbar_width
+                } else {
+                    0.0
+                };
+
+            let thumb_width = f32::max(
+                viewport.size.0 / content_width * track_width,
+                self.min_scrollbar_thumb_size,
+            );
+
+            let scroll_range = content_width - viewport.size.0;
+            let scroll_ratio = if scroll_range > 0.0 {
+                viewport.scroll_offset.0 / scroll_range
+            } else {
+                0.0
+            };
+
+            let thumb_x = scroll_ratio * (track_width - thumb_width);
+
+            ScrollbarInfo {
+                visible: true,
+                track_bounds: Rectangle::new(
+                    Point::new(bounds.x, bounds.y + bounds.height - self.scrollbar_width),
+                    Size::new(track_width, self.scrollbar_width),
+                ),
+                thumb_bounds: Rectangle::new(
+                    Point::new(
+                        bounds.x + thumb_x,
+                        bounds.y + bounds.height - self.scrollbar_width,
+                    ),
+                    Size::new(thumb_width, self.scrollbar_width),
+                ),
+                scroll_ratio,
+            }
+        } else {
+            ScrollbarInfo::default()
+        };
+
+        (vertical_scrollbar, horizontal_scrollbar)
+    }
+
+    /// Calculate the bounds for editor content, accounting for scrollbars
+    fn calculate_editor_content_bounds(
+        &self,
+        bounds: Rectangle,
+        vertical_scrollbar_visible: bool,
+        horizontal_scrollbar_visible: bool,
+    ) -> Rectangle {
+        let width_reduction = if vertical_scrollbar_visible {
+            self.scrollbar_width
+        } else {
+            0.0
+        };
+        let height_reduction = if horizontal_scrollbar_visible {
+            self.scrollbar_width
+        } else {
+            0.0
+        };
+
+        Rectangle::new(
+            bounds.position(),
+            Size::new(
+                bounds.width - width_reduction,
+                bounds.height - height_reduction,
+            ),
+        )
+    }
+
+    /// Render both scrollbars
+    fn render_scrollbars<Renderer>(
+        &self,
+        renderer: &mut Renderer,
+        vertical_scrollbar: ScrollbarInfo,
+        horizontal_scrollbar: ScrollbarInfo,
+    ) where
+        Renderer: iced::advanced::Renderer,
+    {
+        // Render vertical scrollbar
+        if vertical_scrollbar.visible {
+            self.render_single_scrollbar(renderer, vertical_scrollbar);
+        }
+
+        // Render horizontal scrollbar
+        if horizontal_scrollbar.visible {
+            self.render_single_scrollbar(renderer, horizontal_scrollbar);
+        }
+
+        // Render corner piece if both scrollbars are visible
+        if vertical_scrollbar.visible && horizontal_scrollbar.visible {
+            let corner_bounds = Rectangle::new(
+                Point::new(
+                    vertical_scrollbar.track_bounds.x,
+                    horizontal_scrollbar.track_bounds.y,
+                ),
+                Size::new(self.scrollbar_width, self.scrollbar_width),
+            );
+
+            let corner_quad = Quad {
+                bounds: corner_bounds,
+                border: iced::Border::default(),
+                shadow: iced::Shadow::default(),
+                snap: false,
+            };
+
+            renderer.fill_quad(corner_quad, self.scrollbar_track_color);
+        }
+    }
+
+    /// Render a single scrollbar (vertical or horizontal)
+    fn render_single_scrollbar<Renderer>(&self, renderer: &mut Renderer, scrollbar: ScrollbarInfo)
+    where
+        Renderer: iced::advanced::Renderer,
+    {
+        // Render track
+        let track_quad = Quad {
+            bounds: scrollbar.track_bounds,
+            border: iced::Border::default(),
+            shadow: iced::Shadow::default(),
+            snap: false,
+        };
+        renderer.fill_quad(track_quad, self.scrollbar_track_color);
+
+        // Render thumb
+        let thumb_quad = Quad {
+            bounds: scrollbar.thumb_bounds,
+            border: iced::Border::default(),
+            shadow: iced::Shadow::default(),
+            snap: false,
+        };
+        renderer.fill_quad(thumb_quad, self.scrollbar_thumb_color);
     }
 
     /// Get visible lines with partial line information for smooth scrolling
