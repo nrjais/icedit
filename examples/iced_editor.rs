@@ -19,7 +19,29 @@ enum Message {
 
 impl EditorApp {
     fn new() -> (Self, Task<Message>) {
-        let text = fs::read_to_string("README.md").unwrap();
+        // Try to read README.md, but fall back to demo content with tabs if it fails
+        let text = fs::read_to_string("README.md").unwrap_or_else(|_| {
+            "# Ice Edit - Tab Handling Demo\n\n\
+            This editor properly handles tabs for:\n\n\
+            \t• Cursor positioning\n\
+            \t• Text selection\n\
+            \t• Horizontal scrolling\n\
+            \t• Rendering alignment\n\n\
+            Multiple tab testing:\n\
+            \t\tDouble tabs at start\n\
+            hello\t\tworld with double tabs\n\
+            \t\ta\tb\tc\tmixed content\n\n\
+            function example() {\n\
+            \tif (condition) {\n\
+            \t\treturn value;\n\
+            \t}\n\
+            }\n\n\
+            Edge cases:\n\
+            \t\t\t\tFour tabs\n\
+            a\t\t\t\tb\n\
+            Try clicking at different positions in lines with multiple tabs!"
+                .to_string()
+        });
         let editor = Editor::with_text(&text);
 
         let app = Self { editor };

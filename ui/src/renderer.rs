@@ -176,7 +176,7 @@ impl EditorRenderer {
         if !needs_full_render && self.last_render_frame == self.frame_counter - 1 {
             // Only render cursor if it changed position
             if self.last_cursor_position.as_ref() != Some(&cursor_position) {
-                self.draw_cursor_only(renderer, bounds, cursor_position, viewport);
+                self.draw_cursor_only(renderer, bounds, cursor_position, viewport, editor);
                 self.last_cursor_position = Some(cursor_position);
             }
             return;
@@ -264,7 +264,7 @@ impl EditorRenderer {
         self.render_text_batched(renderer, &text_ops);
 
         // Step 6: Draw cursor (on top of text)
-        self.draw_cursor_optimized(renderer, editor_bounds, cursor_position, viewport);
+        self.draw_cursor_optimized(renderer, editor_bounds, cursor_position, viewport, editor);
 
         // Step 7: Draw scrollbars last (on top of everything)
         self.render_scrollbars(renderer, vertical_scrollbar, horizontal_scrollbar);
@@ -778,12 +778,31 @@ impl EditorRenderer {
         bounds: Rectangle,
         cursor_position: Position,
         viewport: &Viewport,
+        editor: &Editor,
     ) where
         Renderer: iced::advanced::Renderer,
     {
-        // Calculate cursor position with viewport offset
-        let cursor_x = cursor_position.column as f32 * self.char_width - viewport.scroll_offset.0;
+        // Calculate cursor position with proper tab handling
         let cursor_y = cursor_position.line as f32 * self.line_height - viewport.scroll_offset.1;
+
+        // Get the line content to calculate accurate X position with tab handling
+        let cursor_x = {
+            let rope = editor.current_buffer().rope();
+            if cursor_position.line < rope.len_lines() {
+                if let Some(line) = rope.get_line(cursor_position.line) {
+                    let line_str = line.to_string();
+                    utils::calculate_column_x_position(
+                        cursor_position.column,
+                        &line_str,
+                        self.char_width,
+                    ) - viewport.scroll_offset.0
+                } else {
+                    cursor_position.column as f32 * self.char_width - viewport.scroll_offset.0
+                }
+            } else {
+                cursor_position.column as f32 * self.char_width - viewport.scroll_offset.0
+            }
+        };
 
         // Only draw if cursor is visible in viewport
         if cursor_x >= -self.cursor_width
@@ -811,11 +830,12 @@ impl EditorRenderer {
         bounds: Rectangle,
         cursor_position: Position,
         viewport: &Viewport,
+        editor: &Editor,
     ) where
         Renderer: iced::advanced::Renderer,
     {
         // Optimized cursor-only rendering for when only cursor moved
-        self.draw_cursor_optimized(renderer, bounds, cursor_position, viewport);
+        self.draw_cursor_optimized(renderer, bounds, cursor_position, viewport, editor);
     }
 
     /// Clean up object pools to prevent memory bloat

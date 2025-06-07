@@ -1,6 +1,61 @@
 use crate::text_utils::is_word_boundary;
 use ropey::Rope;
 
+/// Convert character column to visual column (accounting for tabs)
+fn char_column_to_visual(line: &str, char_column: usize, tab_width: usize) -> usize {
+    let mut visual_col = 0;
+    let mut char_idx = 0;
+
+    for ch in line.chars() {
+        if char_idx >= char_column {
+            break;
+        }
+
+        if ch == '\t' {
+            // Move to next tab stop
+            visual_col = ((visual_col / tab_width) + 1) * tab_width;
+        } else if ch != '\n' {
+            visual_col += 1;
+        }
+        char_idx += 1;
+    }
+
+    visual_col
+}
+
+/// Convert visual column to character column (accounting for tabs)
+fn visual_column_to_char(line: &str, visual_column: usize, tab_width: usize) -> usize {
+    let mut visual_col = 0;
+    let mut char_idx = 0;
+
+    for ch in line.chars() {
+        if ch == '\t' {
+            let next_tab_stop = ((visual_col / tab_width) + 1) * tab_width;
+            if visual_column <= visual_col {
+                // Visual column is before this tab
+                break;
+            } else if visual_column < next_tab_stop {
+                // Visual column is within this tab's range, position cursor after the tab
+                char_idx += 1;
+                break;
+            } else {
+                // Visual column is after this tab, continue
+                visual_col = next_tab_stop;
+            }
+        } else if ch == '\n' {
+            break;
+        } else {
+            if visual_column <= visual_col {
+                break;
+            }
+            visual_col += 1;
+        }
+        char_idx += 1;
+    }
+
+    char_idx
+}
+
 /// Represents a position in the text buffer
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Position {
@@ -58,14 +113,14 @@ impl Position {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Cursor {
     position: Position,
-    desired_column: Option<usize>, // For vertical movement
+    desired_visual_column: Option<usize>, // For vertical movement - tracks visual column position
 }
 
 impl Cursor {
     pub fn new() -> Self {
         Self {
             position: Position::zero(),
-            desired_column: None,
+            desired_visual_column: None,
         }
     }
 
@@ -75,7 +130,8 @@ impl Cursor {
 
     pub fn set_position(&mut self, position: Position) {
         self.position = position;
-        self.desired_column = Some(position.column);
+        // Reset desired visual column when position is explicitly set
+        self.desired_visual_column = None;
     }
 
     pub fn move_up(&mut self, rope: &Rope) -> bool {
@@ -83,17 +139,34 @@ impl Cursor {
             return false;
         }
 
-        let desired_col = self.desired_column.unwrap_or(self.position.column);
+        // Calculate desired visual column if not set
+        let desired_visual_col = if let Some(visual_col) = self.desired_visual_column {
+            visual_col
+        } else {
+            // Calculate current visual column from current position
+            let current_line = rope.line(self.position.line);
+            let current_line_str = current_line.to_string();
+            char_column_to_visual(&current_line_str, self.position.column, 4)
+        };
+
         self.position.line -= 1;
 
         let line = rope.line(self.position.line);
-        // Allow cursor to be at the end of line content, excluding only the newline for movement
+        let line_str = line.to_string();
+
+        // Convert desired visual column back to character column for the new line
+        self.position.column = visual_column_to_char(&line_str, desired_visual_col, 4);
+
+        // Ensure we don't go past the end of the line (excluding newline)
         let line_len = if line.len_chars() > 0 && line.char(line.len_chars() - 1) == '\n' {
             line.len_chars() - 1
         } else {
             line.len_chars()
         };
-        self.position.column = std::cmp::min(desired_col, line_len);
+        self.position.column = std::cmp::min(self.position.column, line_len);
+
+        // Store the visual column for future vertical movements
+        self.desired_visual_column = Some(desired_visual_col);
 
         true
     }
@@ -103,17 +176,34 @@ impl Cursor {
             return false;
         }
 
-        let desired_col = self.desired_column.unwrap_or(self.position.column);
+        // Calculate desired visual column if not set
+        let desired_visual_col = if let Some(visual_col) = self.desired_visual_column {
+            visual_col
+        } else {
+            // Calculate current visual column from current position
+            let current_line = rope.line(self.position.line);
+            let current_line_str = current_line.to_string();
+            char_column_to_visual(&current_line_str, self.position.column, 4)
+        };
+
         self.position.line += 1;
 
         let line = rope.line(self.position.line);
-        // Allow cursor to be at the end of line content, excluding only the newline for movement
+        let line_str = line.to_string();
+
+        // Convert desired visual column back to character column for the new line
+        self.position.column = visual_column_to_char(&line_str, desired_visual_col, 4);
+
+        // Ensure we don't go past the end of the line (excluding newline)
         let line_len = if line.len_chars() > 0 && line.char(line.len_chars() - 1) == '\n' {
             line.len_chars() - 1
         } else {
             line.len_chars()
         };
-        self.position.column = std::cmp::min(desired_col, line_len);
+        self.position.column = std::cmp::min(self.position.column, line_len);
+
+        // Store the visual column for future vertical movements
+        self.desired_visual_column = Some(desired_visual_col);
 
         true
     }
@@ -121,7 +211,8 @@ impl Cursor {
     pub fn move_left(&mut self, rope: &Rope) -> bool {
         if self.position.column > 0 {
             self.position.column -= 1;
-            self.desired_column = Some(self.position.column);
+            // Reset desired visual column for horizontal movement
+            self.desired_visual_column = None;
             true
         } else if self.position.line > 0 {
             self.position.line -= 1;
@@ -133,7 +224,8 @@ impl Cursor {
                 } else {
                     line.len_chars()
                 };
-            self.desired_column = Some(self.position.column);
+            // Reset desired visual column for horizontal movement
+            self.desired_visual_column = None;
             true
         } else {
             false
@@ -151,12 +243,14 @@ impl Cursor {
 
         if self.position.column < line_len {
             self.position.column += 1;
-            self.desired_column = Some(self.position.column);
+            // Reset desired visual column for horizontal movement
+            self.desired_visual_column = None;
             true
         } else if self.position.line < rope.len_lines().saturating_sub(1) {
             self.position.line += 1;
             self.position.column = 0;
-            self.desired_column = Some(0);
+            // Reset desired visual column for horizontal movement
+            self.desired_visual_column = None;
             true
         } else {
             false
@@ -165,7 +259,8 @@ impl Cursor {
 
     pub fn move_to_line_start(&mut self) {
         self.position.column = 0;
-        self.desired_column = Some(0);
+        // Reset desired visual column
+        self.desired_visual_column = None;
     }
 
     pub fn move_to_line_end(&mut self, rope: &Rope) {
@@ -176,12 +271,14 @@ impl Cursor {
         } else {
             line.len_chars()
         };
-        self.desired_column = Some(self.position.column);
+        // Reset desired visual column
+        self.desired_visual_column = None;
     }
 
     pub fn move_to_document_start(&mut self) {
         self.position = Position::zero();
-        self.desired_column = Some(0);
+        // Reset desired visual column
+        self.desired_visual_column = None;
     }
 
     pub fn move_to_document_end(&mut self, rope: &Rope) {
@@ -198,7 +295,8 @@ impl Cursor {
         } else {
             self.position = Position::zero();
         }
-        self.desired_column = Some(self.position.column);
+        // Reset desired visual column
+        self.desired_visual_column = None;
     }
 
     pub fn move_word_left(&mut self, rope: &Rope) -> bool {
@@ -229,7 +327,8 @@ impl Cursor {
         }
 
         self.position = Position::from_byte_offset(rope, offset);
-        self.desired_column = Some(self.position.column);
+        // Reset desired visual column for word movement
+        self.desired_visual_column = None;
         true
     }
 
@@ -261,7 +360,8 @@ impl Cursor {
         }
 
         self.position = Position::from_byte_offset(rope, offset);
-        self.desired_column = Some(self.position.column);
+        // Reset desired visual column for word movement
+        self.desired_visual_column = None;
         true
     }
 }
@@ -380,5 +480,123 @@ mod tests {
         let converted_pos = Position::from_byte_offset(&rope, offset);
         assert_eq!(original_pos.line, converted_pos.line);
         assert_eq!(original_pos.column, converted_pos.column);
+    }
+
+    #[test]
+    fn test_cursor_movement_with_tabs() {
+        let rope = Rope::from_str("hello\tworld\n\tindented\tline\nnormal line");
+        let mut cursor = Cursor::new();
+
+        // Test vertical movement with tabs - should maintain visual column position
+        // Start at position after "hello" (column 5)
+        cursor.set_position(Position::new(0, 5));
+
+        // Move down - should try to maintain visual column 5
+        cursor.move_down(&rope);
+        // On line "\tindented\tline", visual column 5 would be in the middle of "indented"
+        // The tab takes us to visual column 4, then "i" is at visual column 5
+        assert_eq!(cursor.position().line, 1);
+        assert_eq!(cursor.position().column, 2); // After tab + "i"
+
+        // Move down again to "normal line"
+        cursor.move_down(&rope);
+        assert_eq!(cursor.position().line, 2);
+        assert_eq!(cursor.position().column, 5); // Character 5 in "normal line"
+
+        // Move back up - should maintain the visual column
+        cursor.move_up(&rope);
+        assert_eq!(cursor.position().line, 1);
+        assert_eq!(cursor.position().column, 2); // Back to after tab + "i"
+
+        // Test horizontal movement resets desired visual column
+        cursor.move_right(&rope);
+        cursor.move_down(&rope); // Should now try to maintain new visual position
+        assert_eq!(cursor.position().line, 2);
+        // New position should be based on where we were after moving right
+    }
+
+    #[test]
+    fn test_visual_column_conversion() {
+        // Test the utility functions
+        let line = "hello\tworld\ttab";
+
+        // Character column 0 = visual column 0
+        assert_eq!(char_column_to_visual(line, 0, 4), 0);
+
+        // Character column 5 (just before tab) = visual column 5
+        assert_eq!(char_column_to_visual(line, 5, 4), 5);
+
+        // Character column 6 (just after tab) = visual column 8 (next tab stop)
+        assert_eq!(char_column_to_visual(line, 6, 4), 8);
+
+        // Test reverse conversion
+        assert_eq!(visual_column_to_char(line, 0, 4), 0);
+        assert_eq!(visual_column_to_char(line, 5, 4), 5);
+        assert_eq!(visual_column_to_char(line, 7, 4), 6); // Visual col 7 maps to after the tab
+        assert_eq!(visual_column_to_char(line, 8, 4), 6); // Visual col 8 also maps to after the tab
+    }
+
+    #[test]
+    fn test_horizontal_movement_with_tabs() {
+        let rope = Rope::from_str("a\tb\tc");
+        let mut cursor = Cursor::new();
+
+        // Start at beginning: "a\tb\tc"
+        //                      ^
+        assert_eq!(cursor.position().column, 0);
+
+        // Move right - should go to after 'a' (before tab)
+        cursor.move_right(&rope);
+        assert_eq!(cursor.position().column, 1); // At the tab character
+
+        // Move right again - should go to after tab (at 'b')
+        cursor.move_right(&rope);
+        assert_eq!(cursor.position().column, 2); // At 'b'
+
+        // Move right - should go to after 'b' (before second tab)
+        cursor.move_right(&rope);
+        assert_eq!(cursor.position().column, 3); // At second tab
+
+        // Move right - should go to after second tab (at 'c')
+        cursor.move_right(&rope);
+        assert_eq!(cursor.position().column, 4); // At 'c'
+
+        // Now test backward movement
+        cursor.move_left(&rope);
+        assert_eq!(cursor.position().column, 3); // Back to second tab
+
+        cursor.move_left(&rope);
+        assert_eq!(cursor.position().column, 2); // Back to 'b'
+
+        cursor.move_left(&rope);
+        assert_eq!(cursor.position().column, 1); // Back to first tab
+
+        cursor.move_left(&rope);
+        assert_eq!(cursor.position().column, 0); // Back to beginning
+    }
+
+    #[test]
+    fn test_multiple_consecutive_tabs_movement() {
+        let rope = Rope::from_str("\t\tx");
+        let mut cursor = Cursor::new();
+
+        // Start at beginning: "\t\tx"
+        //                      ^
+        assert_eq!(cursor.position().column, 0);
+
+        // Move right - should go to first tab
+        cursor.move_right(&rope);
+        assert_eq!(cursor.position().column, 1); // At second tab
+
+        // Move right again - should go to after second tab (at 'x')
+        cursor.move_right(&rope);
+        assert_eq!(cursor.position().column, 2); // At 'x'
+
+        // Test backward movement
+        cursor.move_left(&rope);
+        assert_eq!(cursor.position().column, 1); // Back to second tab
+
+        cursor.move_left(&rope);
+        assert_eq!(cursor.position().column, 0); // Back to first tab
     }
 }

@@ -368,40 +368,15 @@ impl<'a, Message> EditorWidget<'a, Message> {
             ((point.y + viewport.scroll_offset.1) / self.line_height).max(0.0) as usize
         };
 
-        // Calculate column based on X position
+        // Calculate column based on X position with tab handling
         let rope = self.editor.current_buffer().rope();
         let column = if line < rope.len_lines() {
             if let Some(line_text) = rope.get_line(line) {
                 let line_str = line_text.to_string();
                 let click_x = point.x + viewport.scroll_offset.0;
 
-                // Find the character position that's closest to the click
-                let mut current_x = 0.0;
-                let mut column = 0;
-                let tab_width = utils::get_tab_width(self.char_width);
-
-                for ch in line_str.chars() {
-                    let char_width = if ch == '\t' {
-                        // Calculate tab width
-                        let tab_stop = ((current_x / tab_width).floor() + 1.0) * tab_width;
-                        tab_stop - current_x
-                    } else {
-                        self.char_width
-                    };
-                    if ch == '\n' {
-                        break;
-                    }
-
-                    // Check if click is before the middle of this character
-                    if click_x < current_x + char_width / 2.0 {
-                        break;
-                    }
-
-                    current_x += char_width;
-                    column += 1;
-                }
-
-                column
+                // Use the utility function for accurate tab-aware column calculation
+                utils::x_position_to_column(click_x, &line_str, self.char_width)
             } else {
                 0
             }
