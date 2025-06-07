@@ -1,6 +1,5 @@
 use crate::{
     messages::{CursorMovement, EditorEvent, EditorResponse},
-    viewport::{PartialLineView, Viewport},
     Buffer, Cursor, EditorMessage, Position, Selection,
 };
 
@@ -10,7 +9,6 @@ pub struct Editor {
     cursor: Cursor,
     selection: Option<Selection>,
     clipboard: String,
-    viewport: Viewport,
 }
 
 impl Editor {
@@ -21,7 +19,6 @@ impl Editor {
             cursor: Cursor::new(),
             selection: None,
             clipboard: String::new(),
-            viewport: Viewport::new(),
         }
     }
 
@@ -32,7 +29,6 @@ impl Editor {
             cursor: Cursor::new(),
             selection: None,
             clipboard: String::new(),
-            viewport: Viewport::new(),
         }
     }
 
@@ -49,108 +45,6 @@ impl Editor {
     /// Get the current selection
     pub fn current_selection(&self) -> Option<&Selection> {
         self.selection.as_ref()
-    }
-
-    /// Get the viewport
-    pub fn viewport(&self) -> &Viewport {
-        &self.viewport
-    }
-
-    /// Get mutable viewport
-    pub fn viewport_mut(&mut self) -> &mut Viewport {
-        &mut self.viewport
-    }
-
-    /// Update viewport size
-    pub fn set_viewport_size(&mut self, width: f32, height: f32) {
-        self.viewport.set_size(width, height);
-    }
-
-    /// Update scroll offset with bounds checking
-    pub fn set_scroll_offset(&mut self, x: f32, y: f32) {
-        let line_count = self.buffer.line_count();
-        let clamped_offset = self.viewport.clamp_scroll_offset((x, y), line_count);
-        self.viewport
-            .set_scroll_offset(clamped_offset.0, clamped_offset.1);
-    }
-
-    /// Update character dimensions
-    pub fn set_char_dimensions(&mut self, char_width: f32, line_height: f32) {
-        self.viewport.set_char_dimensions(char_width, line_height);
-    }
-
-    /// Get visible text lines for efficient rendering
-    pub fn get_visible_lines(&self) -> Vec<String> {
-        let rope = self.buffer.rope();
-        let (start_line, end_line) = self.viewport.visible_lines;
-        let total_lines = rope.len_lines();
-
-        let mut lines = Vec::new();
-        for line_idx in start_line..end_line.min(total_lines) {
-            if let Some(line) = rope.get_line(line_idx) {
-                lines.push(line.to_string());
-            }
-        }
-        lines
-    }
-
-    /// Get visible lines with partial line information for smooth scrolling
-    pub fn get_visible_lines_with_partial(&self) -> Vec<(String, &PartialLineView)> {
-        let rope = self.buffer.rope();
-        let total_lines = rope.len_lines();
-
-        let mut lines_with_partial = Vec::new();
-        for partial_line in &self.viewport.partial_lines {
-            if partial_line.line_index < total_lines {
-                if let Some(line) = rope.get_line(partial_line.line_index) {
-                    lines_with_partial.push((line.to_string(), partial_line));
-                }
-            }
-        }
-        lines_with_partial
-    }
-
-    /// Check if the viewport has partial lines (indicating smooth scrolling is active)
-    pub fn has_partial_lines(&self) -> bool {
-        !self.viewport.partial_lines.is_empty()
-    }
-
-    /// Get the number of partial lines being rendered
-    pub fn partial_line_count(&self) -> usize {
-        self.viewport.partial_lines.len()
-    }
-
-    /// Check if cursor should be visible and auto-scroll if needed
-    pub fn ensure_cursor_visible(&mut self) {
-        let cursor_pos = self.cursor.position();
-        let cursor_y = cursor_pos.line as f32 * self.viewport.line_height;
-        let cursor_x = cursor_pos.column as f32 * self.viewport.char_width;
-
-        let mut scroll_x = self.viewport.scroll_offset.0;
-        let mut scroll_y = self.viewport.scroll_offset.1;
-        let mut changed = false;
-
-        // Check vertical scrolling
-        if cursor_y < scroll_y {
-            scroll_y = cursor_y;
-            changed = true;
-        } else if cursor_y + self.viewport.line_height > scroll_y + self.viewport.size.1 {
-            scroll_y = cursor_y + self.viewport.line_height - self.viewport.size.1;
-            changed = true;
-        }
-
-        // Check horizontal scrolling
-        if cursor_x < scroll_x {
-            scroll_x = cursor_x;
-            changed = true;
-        } else if cursor_x + self.viewport.char_width > scroll_x + self.viewport.size.0 {
-            scroll_x = cursor_x + self.viewport.char_width - self.viewport.size.0;
-            changed = true;
-        }
-
-        if changed {
-            self.set_scroll_offset(scroll_x, scroll_y);
-        }
     }
 
     /// Add an event handler (simplified version)
@@ -200,12 +94,7 @@ impl Editor {
                 self.handle_replace_all(pattern, replacement)
             }
 
-            EditorMessage::Scroll(x, y) => self.handle_scroll(x, y),
             EditorMessage::ScrollToLine(line) => self.handle_scroll_to_line(line),
-            EditorMessage::UpdateViewport(width, height) => {
-                self.set_viewport_size(width, height);
-                EditorResponse::Success
-            }
 
             EditorMessage::Command(_, _) => EditorResponse::Success,
         }
@@ -223,10 +112,7 @@ impl Editor {
         }
 
         match self.buffer.insert_char(position, ch, &mut self.cursor) {
-            Ok(_) => {
-                self.ensure_cursor_visible();
-                EditorResponse::TextChanged
-            }
+            Ok(_) => EditorResponse::TextChanged,
             Err(e) => EditorResponse::Error(e.to_string()),
         }
     }
@@ -242,10 +128,7 @@ impl Editor {
         }
 
         match self.buffer.insert_text(position, &text, &mut self.cursor) {
-            Ok(_) => {
-                self.ensure_cursor_visible();
-                EditorResponse::TextChanged
-            }
+            Ok(_) => EditorResponse::TextChanged,
             Err(e) => EditorResponse::Error(e.to_string()),
         }
     }
@@ -256,7 +139,6 @@ impl Editor {
             if !selection.is_empty() {
                 match self.buffer.delete_selection(&selection, &mut self.cursor) {
                     Ok(_) => {
-                        self.ensure_cursor_visible();
                         return EditorResponse::Success;
                     }
                     Err(e) => return EditorResponse::Error(e.to_string()),
@@ -266,10 +148,7 @@ impl Editor {
 
         let position = self.cursor.position();
         match self.buffer.delete_char(position, &mut self.cursor) {
-            Ok(_) => {
-                self.ensure_cursor_visible();
-                EditorResponse::Success
-            }
+            Ok(_) => EditorResponse::Success,
             Err(e) => EditorResponse::Error(e.to_string()),
         }
     }
@@ -280,7 +159,6 @@ impl Editor {
             if !selection.is_empty() {
                 match self.buffer.delete_selection(&selection, &mut self.cursor) {
                     Ok(_) => {
-                        self.ensure_cursor_visible();
                         return EditorResponse::Success;
                     }
                     Err(e) => return EditorResponse::Error(e.to_string()),
@@ -290,10 +168,7 @@ impl Editor {
 
         let position = self.cursor.position();
         match self.buffer.delete_char_backward(position, &mut self.cursor) {
-            Ok(_) => {
-                self.ensure_cursor_visible();
-                EditorResponse::Success
-            }
+            Ok(_) => EditorResponse::Success,
             Err(e) => EditorResponse::Error(e.to_string()),
         }
     }
@@ -301,10 +176,7 @@ impl Editor {
     fn handle_delete_line(&mut self) -> EditorResponse {
         let line = self.cursor.position().line;
         match self.buffer.delete_line(line, &mut self.cursor) {
-            Ok(_) => {
-                self.ensure_cursor_visible();
-                EditorResponse::Success
-            }
+            Ok(_) => EditorResponse::Success,
             Err(e) => EditorResponse::Error(e.to_string()),
         }
     }
@@ -312,10 +184,7 @@ impl Editor {
     fn handle_delete_selection(&mut self) -> EditorResponse {
         if let Some(selection) = self.selection.take() {
             match self.buffer.delete_selection(&selection, &mut self.cursor) {
-                Ok(_) => {
-                    self.ensure_cursor_visible();
-                    EditorResponse::Success
-                }
+                Ok(_) => EditorResponse::Success,
                 Err(e) => EditorResponse::Error(e.to_string()),
             }
         } else {
@@ -374,7 +243,6 @@ impl Editor {
                 self.selection = None;
             }
 
-            self.ensure_cursor_visible();
             let position = self.cursor.position();
 
             // Return appropriate response based on whether selection was cleared
@@ -396,7 +264,6 @@ impl Editor {
         }
 
         self.cursor.set_position(position);
-        self.ensure_cursor_visible();
 
         // Return appropriate response based on whether selection was cleared
         if selection_cleared {
@@ -473,7 +340,6 @@ impl Editor {
         };
 
         if moved {
-            self.ensure_cursor_visible();
             let new_position = self.cursor.position();
 
             // Update selection to include new cursor position
@@ -508,7 +374,6 @@ impl Editor {
         self.selection = Some(selection.clone());
         // Set cursor to the end position of the selection
         self.cursor.set_position(end);
-        self.ensure_cursor_visible();
         EditorResponse::SelectionChanged(Some(selection))
     }
 
@@ -669,20 +534,6 @@ impl Editor {
                 }
             }
         }
-    }
-
-    /// Handle scroll operations with automatic viewport management
-    fn handle_scroll(&mut self, delta_x: f32, delta_y: f32) -> EditorResponse {
-        // Handle scrolling using the core editor's viewport management
-        let current_offset = self.viewport.scroll_offset;
-        let new_offset = (current_offset.0 + delta_x, current_offset.1 + delta_y);
-
-        // Clamp the scroll offset to valid bounds
-        let line_count = self.buffer.line_count();
-        let clamped_offset = self.viewport.clamp_scroll_offset(new_offset, line_count);
-        self.set_scroll_offset(clamped_offset.0, clamped_offset.1);
-
-        EditorResponse::Success
     }
 }
 

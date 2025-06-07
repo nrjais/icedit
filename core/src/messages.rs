@@ -43,9 +43,7 @@ pub enum EditorMessage {
     ReplaceAll(String, String),
 
     // View operations
-    Scroll(f32, f32),
     ScrollToLine(usize),
-    UpdateViewport(f32, f32),
 
     // Custom commands
     Command(String, Vec<String>),

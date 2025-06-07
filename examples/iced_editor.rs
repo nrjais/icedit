@@ -3,7 +3,7 @@ use std::fs;
 use iced::{Element, Task, Theme};
 use icedit::EditorMessage;
 use icedit_core::Editor;
-use icedit_ui::{get_char_dimensions, styled_editor};
+use icedit_ui::styled_editor;
 
 /// Main application state
 struct EditorApp {
@@ -20,12 +20,7 @@ enum Message {
 impl EditorApp {
     fn new() -> (Self, Task<Message>) {
         let text = fs::read_to_string("README.md").unwrap();
-        let mut editor = Editor::with_text(&text);
-
-        // Get measured character dimensions for the font size we'll use
-        let font_size = 16.0;
-        let (char_width, line_height) = get_char_dimensions(font_size);
-        editor.set_char_dimensions(char_width, line_height);
+        let editor = Editor::with_text(&text);
 
         let app = Self { editor };
 
@@ -54,6 +49,7 @@ impl EditorApp {
             true,            // Dark theme
             Message::Editor, // Message mapper
         )
+        .into()
     }
 
     fn theme(&self) -> Theme {
