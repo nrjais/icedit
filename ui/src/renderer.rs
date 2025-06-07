@@ -585,7 +585,7 @@ impl EditorRenderer {
                 continue;
             }
 
-            let y_position = bounds.y + partial_line.y_offset + partial_line.clip_top;
+            let y_position = bounds.y + partial_line.y_offset;
             let x_position = bounds.x - viewport.scroll_offset.0;
 
             // Calculate visible column range for horizontal scrolling optimization
@@ -595,7 +595,9 @@ impl EditorRenderer {
                 viewport.size.0,
             );
 
-            // Create text operation
+            // Create text operation with proper clipping bounds
+            let text_bounds_y = y_position + partial_line.clip_top;
+
             text_ops.push(TextOperation {
                 content: if let Some(col_view) = column_view {
                     // Only render the visible portion of the line
@@ -610,7 +612,7 @@ impl EditorRenderer {
                 bounds: Rectangle::new(
                     Point::new(
                         x_position + column_view.map_or(0.0, |cv| cv.x_offset),
-                        y_position,
+                        text_bounds_y,
                     ),
                     Size::new(
                         column_view.map_or(bounds.width, |cv| cv.visible_width),
@@ -636,7 +638,7 @@ impl EditorRenderer {
                     let start_x = self.calculate_x_position_fast(start_col, line_content);
                     let end_x = self.calculate_x_position_fast(end_col, line_content);
 
-                    let selection_y = y_position;
+                    let selection_y = text_bounds_y;
                     let selection_width = end_x - start_x;
 
                     if selection_width > 0.0 {
