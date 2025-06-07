@@ -467,110 +467,67 @@ where
 
         // Get visible lines with partial line information for smooth scrolling
         let visible_lines_with_partial = self.editor.get_visible_lines_with_partial();
+        let viewport = self.editor.viewport();
+        let selection = self.editor.current_selection();
 
-        // Draw selection with support for partial lines
-        if let Some(selection) = self.editor.current_selection() {
-            let start_point = self.position_to_point(selection.start);
-            let end_point = self.position_to_point(selection.end);
-
-            if selection.start.line == selection.end.line {
-                // Single line selection
-                let selection_bounds = Rectangle::new(
-                    Point::new(start_point.x + bounds.x, start_point.y + bounds.y),
-                    Size::new(end_point.x - start_point.x, self.line_height),
-                );
-                renderer.fill_quad(
-                    Quad {
-                        bounds: selection_bounds,
-                        border: iced::Border::default(),
-                        shadow: iced::Shadow::default(),
-                        snap: false,
-                    },
-                    self.selection_color,
-                );
-            } else {
-                // Multi-line selection - render all selected lines that are visible or partially visible
-                let viewport = self.editor.viewport();
-
-                // Calculate which lines are within the selection range and also within the viewport
-                for line_idx in selection.start.line..=selection.end.line {
-                    // Use the same line positioning logic as text rendering
-                    let line_y = self.get_line_y_position(line_idx);
-
-                    // Only draw if the line is at least partially visible in the viewport
-                    if line_y + self.line_height > 0.0 && line_y < bounds.height {
-                        // Calculate x positions using the same logic as position_to_point for consistency
-                        let (start_x, end_x) =
-                            if line_idx == selection.start.line && line_idx == selection.end.line {
-                                // Single line within multi-line selection (shouldn't happen, but handle it)
-                                let start_pos = self.position_to_point(selection.start).x
-                                    + viewport.scroll_offset.0;
-                                let end_pos = self.position_to_point(selection.end).x
-                                    + viewport.scroll_offset.0;
-                                (start_pos, end_pos)
-                            } else if line_idx == selection.start.line {
-                                let start_pos = self.position_to_point(selection.start).x
-                                    + viewport.scroll_offset.0;
-                                (start_pos, bounds.width + viewport.scroll_offset.0)
-                            } else if line_idx == selection.end.line {
-                                let end_pos = self.position_to_point(selection.end).x
-                                    + viewport.scroll_offset.0;
-                                (0.0, end_pos)
-                            } else {
-                                (0.0, bounds.width + viewport.scroll_offset.0)
-                            };
-
-                        // Ensure we don't render empty or negative width selections
-                        if start_x < end_x {
-                            // Calculate clipping for partially visible lines
-                            let clip_top = if line_y < 0.0 { -line_y } else { 0.0 };
-                            let clip_bottom = if line_y + self.line_height > bounds.height {
-                                (line_y + self.line_height) - bounds.height
-                            } else {
-                                0.0
-                            };
-
-                            let visible_height = self.line_height - clip_top - clip_bottom;
-                            let selection_y = bounds.y + line_y + clip_top;
-
-                            if visible_height > 0.0 {
-                                let selection_bounds = Rectangle::new(
-                                    Point::new(
-                                        start_x + bounds.x - viewport.scroll_offset.0,
-                                        selection_y,
-                                    ),
-                                    Size::new(end_x - start_x, visible_height),
-                                );
-                                renderer.fill_quad(
-                                    Quad {
-                                        bounds: selection_bounds,
-                                        border: iced::Border::default(),
-                                        shadow: iced::Shadow::default(),
-                                        snap: false,
-                                    },
-                                    self.selection_color,
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Draw text using visible lines with partial line support for smooth scrolling
+        // Draw text and selection in a single loop over visible lines for efficiency
         for (line_content, partial_line) in visible_lines_with_partial.iter() {
-            let position = Point::new(
-                bounds.x - self.editor.viewport().scroll_offset.0,
-                bounds.y + partial_line.y_offset,
-            );
+            let line_index = partial_line.line_index;
 
-            // Calculate visible height for this line
+            // Calculate visible height for this line (for clipping)
             let visible_height =
                 self.line_height - partial_line.clip_top - partial_line.clip_bottom;
 
-            // Create a clipped rendering area for the text
+            // Text position
+            let text_position = Point::new(
+                bounds.x - viewport.scroll_offset.0,
+                bounds.y + partial_line.y_offset,
+            );
+
+            // Draw selection for this line if it's within the selection range
+            if let Some(selection) = selection {
+                if line_index >= selection.start.line && line_index <= selection.end.line {
+                    let start_column = if line_index == selection.start.line {
+                        selection.start.column
+                    } else {
+                        0
+                    };
+                    let end_column = if line_index == selection.end.line {
+                        selection.end.column
+                    } else {
+                        line_content.chars().count()
+                    };
+                    let start_x = self
+                        .position_to_point(Position::new(line_index, start_column))
+                        .x;
+                    let end_x = self
+                        .position_to_point(Position::new(line_index, end_column))
+                        .x;
+
+                    // Only draw selection if line has content
+                    if end_x > start_x && start_x < end_x {
+                        let selection_y = bounds.y + partial_line.y_offset + partial_line.clip_top;
+                        let selection_bounds = Rectangle::new(
+                            Point::new(start_x + bounds.x - viewport.scroll_offset.0, selection_y),
+                            Size::new(end_x - start_x, visible_height),
+                        );
+
+                        renderer.fill_quad(
+                            Quad {
+                                bounds: selection_bounds,
+                                border: iced::Border::default(),
+                                shadow: iced::Shadow::default(),
+                                snap: false,
+                            },
+                            self.selection_color,
+                        );
+                    }
+                }
+            }
+
+            // Draw text
             let text_bounds = Rectangle::new(
-                Point::new(position.x, position.y + partial_line.clip_top),
+                Point::new(text_position.x, text_position.y + partial_line.clip_top),
                 Size::new(bounds.width, visible_height),
             );
 
@@ -588,9 +545,9 @@ where
                     shaping: iced::advanced::text::Shaping::Advanced,
                     wrapping: iced::advanced::text::Wrapping::None,
                 },
-                position,
+                text_position,
                 self.text_color,
-                text_bounds, // Use clipped bounds instead of full bounds
+                text_bounds,
             );
         }
 
