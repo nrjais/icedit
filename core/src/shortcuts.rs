@@ -123,15 +123,6 @@ impl KeyBinding {
     }
 }
 
-/// Events that the shortcut manager can emit
-#[derive(Debug, Clone)]
-pub enum ShortcutEvent {
-    /// Editor message from a shortcut
-    EditorMessage(EditorMessage),
-    /// Character input (not a shortcut)
-    CharacterInput(char),
-}
-
 /// Manages keyboard shortcuts and key bindings
 #[derive(Debug, Clone)]
 pub struct ShortcutManager {
@@ -170,12 +161,12 @@ impl ShortcutManager {
     }
 
     /// Handle key event - returns either a shortcut event or character input
-    pub fn handle_key_event(&self, event: KeyEvent) -> Option<ShortcutEvent> {
+    pub fn handle_key_event(&self, event: KeyEvent) -> Option<EditorMessage> {
         let shortcut = Shortcut::from_key_event(event.clone());
 
         // Check if this is a shortcut first
         if let Some(message) = self.bindings.get(&shortcut) {
-            return Some(ShortcutEvent::EditorMessage(message.clone()));
+            return Some(message.clone());
         }
 
         // If not a shortcut and it's a character with no modifiers (except shift), treat as character input
@@ -187,28 +178,28 @@ impl ShortcutManager {
                         && !event.modifiers.alt
                         && !event.modifiers.super_key)
                 {
-                    Some(ShortcutEvent::CharacterInput(ch))
+                    Some(EditorMessage::InsertChar(ch))
                 } else {
                     None
                 }
             }
             Key::Named(NamedKey::Enter) => {
                 if event.modifiers.is_empty() {
-                    Some(ShortcutEvent::CharacterInput('\n'))
+                    Some(EditorMessage::InsertChar('\n'))
                 } else {
                     None
                 }
             }
             Key::Named(NamedKey::Tab) => {
                 if event.modifiers.is_empty() {
-                    Some(ShortcutEvent::CharacterInput('\t'))
+                    Some(EditorMessage::InsertChar('\t'))
                 } else {
                     None
                 }
             }
             Key::Named(NamedKey::Space) => {
                 if event.modifiers.is_empty() {
-                    Some(ShortcutEvent::CharacterInput(' '))
+                    Some(EditorMessage::InsertChar(' '))
                 } else {
                     None
                 }
@@ -262,25 +253,25 @@ impl ShortcutManager {
         // Selection with Shift
         self.bind(KeyBinding::new(
             Shortcut::shift(Key::Named(NamedKey::ArrowUp)),
-            EditorMessage::MoveCursorWithSelection(CursorMovement::Up, true),
+            EditorMessage::MoveCursorWithSelection(CursorMovement::Up),
             "Select up",
         ));
 
         self.bind(KeyBinding::new(
             Shortcut::shift(Key::Named(NamedKey::ArrowDown)),
-            EditorMessage::MoveCursorWithSelection(CursorMovement::Down, true),
+            EditorMessage::MoveCursorWithSelection(CursorMovement::Down),
             "Select down",
         ));
 
         self.bind(KeyBinding::new(
             Shortcut::shift(Key::Named(NamedKey::ArrowLeft)),
-            EditorMessage::MoveCursorWithSelection(CursorMovement::Left, true),
+            EditorMessage::MoveCursorWithSelection(CursorMovement::Left),
             "Select left",
         ));
 
         self.bind(KeyBinding::new(
             Shortcut::shift(Key::Named(NamedKey::ArrowRight)),
-            EditorMessage::MoveCursorWithSelection(CursorMovement::Right, true),
+            EditorMessage::MoveCursorWithSelection(CursorMovement::Right),
             "Select right",
         ));
 
@@ -300,13 +291,13 @@ impl ShortcutManager {
         // Word selection
         self.bind(KeyBinding::new(
             Shortcut::ctrl_shift(Key::Named(NamedKey::ArrowLeft)),
-            EditorMessage::MoveCursorWithSelection(CursorMovement::WordLeft, true),
+            EditorMessage::MoveCursorWithSelection(CursorMovement::WordLeft),
             "Select to previous word",
         ));
 
         self.bind(KeyBinding::new(
             Shortcut::ctrl_shift(Key::Named(NamedKey::ArrowRight)),
-            EditorMessage::MoveCursorWithSelection(CursorMovement::WordRight, true),
+            EditorMessage::MoveCursorWithSelection(CursorMovement::WordRight),
             "Select to next word",
         ));
 
@@ -326,13 +317,13 @@ impl ShortcutManager {
         // Line selection
         self.bind(KeyBinding::new(
             Shortcut::shift(Key::Named(NamedKey::Home)),
-            EditorMessage::MoveCursorWithSelection(CursorMovement::LineStart, true),
+            EditorMessage::MoveCursorWithSelection(CursorMovement::LineStart),
             "Select to line start",
         ));
 
         self.bind(KeyBinding::new(
             Shortcut::shift(Key::Named(NamedKey::End)),
-            EditorMessage::MoveCursorWithSelection(CursorMovement::LineEnd, true),
+            EditorMessage::MoveCursorWithSelection(CursorMovement::LineEnd),
             "Select to line end",
         ));
 
@@ -352,13 +343,13 @@ impl ShortcutManager {
         // Document selection
         self.bind(KeyBinding::new(
             Shortcut::ctrl_shift(Key::Named(NamedKey::Home)),
-            EditorMessage::MoveCursorWithSelection(CursorMovement::DocumentStart, true),
+            EditorMessage::MoveCursorWithSelection(CursorMovement::DocumentStart),
             "Select to document start",
         ));
 
         self.bind(KeyBinding::new(
             Shortcut::ctrl_shift(Key::Named(NamedKey::End)),
-            EditorMessage::MoveCursorWithSelection(CursorMovement::DocumentEnd, true),
+            EditorMessage::MoveCursorWithSelection(CursorMovement::DocumentEnd),
             "Select to document end",
         ));
 
@@ -378,13 +369,13 @@ impl ShortcutManager {
         // Page selection
         self.bind(KeyBinding::new(
             Shortcut::shift(Key::Named(NamedKey::PageUp)),
-            EditorMessage::MoveCursorWithSelection(CursorMovement::PageUp, true),
+            EditorMessage::MoveCursorWithSelection(CursorMovement::PageUp),
             "Select page up",
         ));
 
         self.bind(KeyBinding::new(
             Shortcut::shift(Key::Named(NamedKey::PageDown)),
-            EditorMessage::MoveCursorWithSelection(CursorMovement::PageDown, true),
+            EditorMessage::MoveCursorWithSelection(CursorMovement::PageDown),
             "Select page down",
         ));
 
@@ -646,7 +637,7 @@ impl ShortcutManager {
                     Key::Named(NamedKey::ArrowLeft),
                     Modifiers::new().super_key().shift(),
                 ),
-                EditorMessage::MoveCursorWithSelection(CursorMovement::LineStart, true),
+                EditorMessage::MoveCursorWithSelection(CursorMovement::LineStart),
                 "Select to line start (macOS)",
             ));
 
@@ -655,7 +646,7 @@ impl ShortcutManager {
                     Key::Named(NamedKey::ArrowRight),
                     Modifiers::new().super_key().shift(),
                 ),
-                EditorMessage::MoveCursorWithSelection(CursorMovement::LineEnd, true),
+                EditorMessage::MoveCursorWithSelection(CursorMovement::LineEnd),
                 "Select to line end (macOS)",
             ));
 
@@ -664,7 +655,7 @@ impl ShortcutManager {
                     Key::Named(NamedKey::ArrowUp),
                     Modifiers::new().super_key().shift(),
                 ),
-                EditorMessage::MoveCursorWithSelection(CursorMovement::DocumentStart, true),
+                EditorMessage::MoveCursorWithSelection(CursorMovement::DocumentStart),
                 "Select to document start (macOS)",
             ));
 
@@ -673,7 +664,7 @@ impl ShortcutManager {
                     Key::Named(NamedKey::ArrowDown),
                     Modifiers::new().super_key().shift(),
                 ),
-                EditorMessage::MoveCursorWithSelection(CursorMovement::DocumentEnd, true),
+                EditorMessage::MoveCursorWithSelection(CursorMovement::DocumentEnd),
                 "Select to document end (macOS)",
             ));
 
@@ -730,13 +721,13 @@ impl ShortcutManager {
             // macOS word selection with Option+Shift
             self.bind(KeyBinding::new(
                 Shortcut::alt_shift(Key::Named(NamedKey::ArrowLeft)),
-                EditorMessage::MoveCursorWithSelection(CursorMovement::WordLeft, true),
+                EditorMessage::MoveCursorWithSelection(CursorMovement::WordLeft),
                 "Select to previous word (macOS)",
             ));
 
             self.bind(KeyBinding::new(
                 Shortcut::alt_shift(Key::Named(NamedKey::ArrowRight)),
-                EditorMessage::MoveCursorWithSelection(CursorMovement::WordRight, true),
+                EditorMessage::MoveCursorWithSelection(CursorMovement::WordRight),
                 "Select to next word (macOS)",
             ));
 

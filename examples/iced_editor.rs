@@ -1,8 +1,9 @@
 use std::fs;
 
 use iced::{Element, Task, Theme};
+use icedit::EditorMessage;
 use icedit_core::Editor;
-use icedit_ui::{get_char_dimensions, styled_editor, WidgetMessage};
+use icedit_ui::{get_char_dimensions, styled_editor};
 
 /// Main application state
 struct EditorApp {
@@ -13,11 +14,11 @@ struct EditorApp {
 #[derive(Debug, Clone)]
 enum Message {
     /// Widget messages from the editor
-    Widget(WidgetMessage),
+    Editor(EditorMessage),
 }
 
 impl EditorApp {
-    fn new() -> Self {
+    fn new() -> (Self, Task<Message>) {
         let text = fs::read_to_string("README.md").unwrap();
         let mut editor = Editor::with_text(&text);
 
@@ -26,7 +27,9 @@ impl EditorApp {
         let (char_width, line_height) = get_char_dimensions(font_size);
         editor.set_char_dimensions(char_width, line_height);
 
-        Self { editor }
+        let app = Self { editor };
+
+        (app, Task::none())
     }
 
     fn title(&self) -> String {
@@ -35,32 +38,8 @@ impl EditorApp {
 
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::Widget(widget_message) => {
-                match widget_message {
-                    WidgetMessage::ShortcutEvent(shortcut_event) => {
-                        // Handle shortcut event using the core editor's new method
-                        let _response = self.editor.handle_shortcut_event(shortcut_event);
-                    }
-                    WidgetMessage::MousePressed(position) => {
-                        // Handle mouse click using the core editor's new method
-                        let _response = self.editor.handle_mouse_click(position);
-                    }
-                    WidgetMessage::Scroll(delta, bounds) => {
-                        // Handle scrolling using the core editor's new method
-                        let _response = self.editor.handle_scroll(
-                            delta.x,
-                            delta.y,
-                            bounds.viewport_size.width,
-                            bounds.viewport_size.height,
-                        );
-                    }
-                    WidgetMessage::MouseReleased(_position) => {
-                        // Handle mouse release events if needed
-                    }
-                    WidgetMessage::MouseMoved(_position) => {
-                        // Handle mouse move events if needed
-                    }
-                }
+            Message::Editor(editor_message) => {
+                self.editor.handle_message(editor_message);
             }
         }
 
@@ -73,7 +52,7 @@ impl EditorApp {
             &self.editor,
             16.0,            // Font size
             true,            // Dark theme
-            Message::Widget, // Message mapper
+            Message::Editor, // Message mapper
         )
     }
 
@@ -82,12 +61,9 @@ impl EditorApp {
     }
 }
 
-impl Default for EditorApp {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 fn main() -> iced::Result {
-    iced::run(EditorApp::update, EditorApp::view)
+    iced::application(EditorApp::new, EditorApp::update, EditorApp::view)
+        .title(|app: &EditorApp| app.title())
+        .theme(|app: &EditorApp| app.theme())
+        .run()
 }

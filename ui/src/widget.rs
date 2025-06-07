@@ -8,7 +8,7 @@ use iced::{
     mouse, Color, Element, Event, Font, Length, Point, Rectangle, Size, Theme, Vector,
 };
 use icedit_core::{
-    Editor, Key, KeyEvent, Modifiers, NamedKey, Position, Selection, ShortcutEvent, ShortcutManager,
+    Editor, EditorMessage, Key, KeyEvent, Modifiers, NamedKey, Position, Selection, ShortcutManager,
 };
 
 /// State that should be passed from outside to the widget
@@ -41,8 +41,7 @@ impl EditorState {
 /// Messages that the widget can emit - these will be routed by the user
 #[derive(Debug, Clone)]
 pub enum WidgetMessage {
-    /// Shortcut event from the editor
-    ShortcutEvent(ShortcutEvent),
+    EditorMessage(EditorMessage),
     /// Scroll events with viewport bounds for proper scroll limiting
     Scroll(Vector, ScrollBounds),
     /// Mouse events with editor positions
@@ -101,7 +100,7 @@ pub struct EditorWidget<'a, Message> {
     cursor_color: Color,
     selection_color: Color,
     shortcut_manager: ShortcutManager,
-    on_message: Box<dyn Fn(WidgetMessage) -> Message>,
+    on_message: Box<dyn Fn(EditorMessage) -> Message>,
 }
 
 impl<'a, Message> EditorWidget<'a, Message> {
@@ -109,7 +108,7 @@ impl<'a, Message> EditorWidget<'a, Message> {
 
     pub fn new<F>(editor: &'a Editor, on_message: F) -> Self
     where
-        F: Fn(WidgetMessage) -> Message + 'static,
+        F: Fn(EditorMessage) -> Message + 'static,
     {
         let (char_width, line_height) = Self::measure_char_dimensions(Self::DEFAULT_FONT_SIZE);
 
@@ -401,11 +400,25 @@ impl<'a, Message> EditorWidget<'a, Message> {
     }
 }
 
+/// Widget state for tracking viewport initialization
+#[derive(Debug, Clone, Default)]
+struct WidgetState {
+    viewport: Rectangle,
+}
+
 impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer> for EditorWidget<'_, Message>
 where
     Message: Clone,
     Renderer: iced::advanced::Renderer + iced::advanced::text::Renderer<Font = Font>,
 {
+    fn tag(&self) -> iced::advanced::widget::tree::Tag {
+        iced::advanced::widget::tree::Tag::of::<WidgetState>()
+    }
+
+    fn state(&self) -> iced::advanced::widget::tree::State {
+        iced::advanced::widget::tree::State::new(WidgetState::default())
+    }
+
     fn size(&self) -> Size<Length> {
         // Fill width, but use content height for height
         let line_count = self.editor.current_buffer().line_count();
@@ -617,7 +630,7 @@ where
 
     fn update(
         &mut self,
-        _tree: &mut Tree,
+        tree: &mut Tree,
         event: &Event,
         layout: Layout<'_>,
         cursor: mouse::Cursor,
@@ -626,6 +639,13 @@ where
         shell: &mut Shell<'_, Message>,
         _viewport: &Rectangle,
     ) {
+        // Check if viewport needs to be initialized
+        let widget_state = tree.state.downcast_mut::<WidgetState>();
+        let bounds = layout.bounds();
+        if widget_state.viewport != bounds {
+            widget_state.viewport = bounds;
+        }
+
         match event {
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
                 if let Some(cursor_position) = cursor.position_in(layout.bounds()) {
@@ -634,7 +654,7 @@ where
                     let relative_position =
                         Point::new(cursor_position.x - bounds.x, cursor_position.y - bounds.y);
                     let editor_position = self.point_to_position(relative_position);
-                    let message = (self.on_message)(WidgetMessage::MousePressed(editor_position));
+                    let message = (self.on_message)(EditorMessage::MoveCursorTo(editor_position));
                     shell.publish(message);
                 }
             }
@@ -645,20 +665,12 @@ where
                     let relative_position =
                         Point::new(cursor_position.x - bounds.x, cursor_position.y - bounds.y);
                     let editor_position = self.point_to_position(relative_position);
-                    let message = (self.on_message)(WidgetMessage::MouseReleased(editor_position));
+                    let message = (self.on_message)(EditorMessage::MoveCursorTo(editor_position));
                     shell.publish(message);
                 }
             }
             Event::Mouse(mouse::Event::CursorMoved { .. }) => {
-                if let Some(cursor_position) = cursor.position_in(layout.bounds()) {
-                    // Convert cursor position to relative coordinates within the widget
-                    let bounds = layout.bounds();
-                    let relative_position =
-                        Point::new(cursor_position.x - bounds.x, cursor_position.y - bounds.y);
-                    let editor_position = self.point_to_position(relative_position);
-                    let message = (self.on_message)(WidgetMessage::MouseMoved(editor_position));
-                    shell.publish(message);
-                }
+                // TODO: Handle selection
             }
             Event::Keyboard(iced::keyboard::Event::KeyPressed {
                 key,
@@ -679,8 +691,7 @@ where
                 {
                     if let Some(shortcut_event) = self.shortcut_manager.handle_key_event(key_event)
                     {
-                        let message =
-                            (self.on_message)(WidgetMessage::ShortcutEvent(shortcut_event));
+                        let message = (self.on_message)(shortcut_event);
                         shell.publish(message);
                     }
                 }
@@ -696,21 +707,11 @@ where
 
                 // Calculate scroll bounds using buffer information
                 let bounds = layout.bounds();
-                let line_count = self.editor.current_buffer().line_count();
-                let content_height = line_count as f32 * self.line_height;
 
-                // Estimate content width based on viewport or use a reasonable default
-                let estimated_max_line_width = 120; // characters
-                let content_width = estimated_max_line_width as f32 * self.char_width;
-
-                let scroll_bounds = ScrollBounds {
-                    content_size: Size::new(content_width, content_height),
-                    viewport_size: Size::new(bounds.width, bounds.height),
-                    line_height: self.line_height,
-                };
-
-                let message = (self.on_message)(WidgetMessage::Scroll(scroll_delta, scroll_bounds));
-                shell.publish(message);
+                let message = EditorMessage::Scroll(scroll_delta.x, scroll_delta.y);
+                shell.publish((self.on_message)(message));
+                let message = EditorMessage::UpdateViewport(bounds.width, bounds.height);
+                shell.publish((self.on_message)(message));
             }
             _ => {}
         }
@@ -720,7 +721,7 @@ where
 /// Helper function to create the editor widget as an Element
 pub fn editor_widget<'a, Message: 'a + Clone>(
     editor: &'a Editor,
-    on_message: impl Fn(WidgetMessage) -> Message + 'static,
+    on_message: impl Fn(EditorMessage) -> Message + 'static,
 ) -> Element<'a, Message, Theme, iced::Renderer> {
     Element::new(EditorWidget::new(editor, on_message))
 }
@@ -761,7 +762,7 @@ pub fn styled_editor<'a, Message: 'a + Clone>(
     editor: &'a Editor,
     font_size: f32,
     dark_theme: bool,
-    on_message: impl Fn(WidgetMessage) -> Message + 'static,
+    on_message: impl Fn(EditorMessage) -> Message + 'static,
 ) -> Element<'a, Message, Theme, iced::Renderer> {
     let widget = if dark_theme {
         EditorWidget::new(editor, on_message)

@@ -16,7 +16,7 @@ pub enum EditorMessage {
     MoveCursorTo(Position),
 
     // Cursor movement with selection handling
-    MoveCursorWithSelection(CursorMovement, bool), // movement, extend_selection
+    MoveCursorWithSelection(CursorMovement),
 
     // Selection
     StartSelection,
@@ -41,9 +41,9 @@ pub enum EditorMessage {
     ReplaceAll(String, String),
 
     // View operations
-    ScrollUp(usize),
-    ScrollDown(usize),
+    Scroll(f32, f32),
     ScrollToLine(usize),
+    UpdateViewport(f32, f32),
 
     // Custom commands
     Command(String, Vec<String>),
