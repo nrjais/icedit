@@ -345,20 +345,25 @@ impl<'a, Message> EditorWidget<'a, Message> {
 
     /// Convert screen point to editor position (line/column)
     fn point_to_position(&self, point: Point, viewport: &Viewport) -> Position {
-        // Find the line that contains this Y position using actual line positions
+        // Find the line that contains this Y position
         let target_y = point.y; // point.y is already relative to widget bounds
 
         let line = if !viewport.partial_lines.is_empty() {
             let mut found_line = 0;
-            let mut best_distance = f32::INFINITY;
 
-            // Find the closest line by Y position
+            // Find the line that contains this Y position (not just closest)
             for partial_line in &viewport.partial_lines {
                 let line_y = partial_line.y_offset;
-                let distance = (target_y - line_y).abs();
+                let line_bottom = line_y + self.line_height;
 
-                if distance < best_distance {
-                    best_distance = distance;
+                // Check if the click is within this line's bounds
+                if target_y >= line_y && target_y < line_bottom {
+                    found_line = partial_line.line_index;
+                    break;
+                }
+
+                // If we're past this line, update found_line in case this is the last one
+                if target_y >= line_bottom {
                     found_line = partial_line.line_index;
                 }
             }
@@ -380,7 +385,7 @@ impl<'a, Message> EditorWidget<'a, Message> {
                 let mut current_x = 0.0;
                 let mut column = 0;
 
-                for (i, ch) in line_str.char_indices() {
+                for ch in line_str.chars() {
                     let char_width = if ch == '\t' {
                         // Calculate tab width
                         let tab_stop = ((current_x / (self.char_width * 4.0)).floor() + 1.0)
@@ -389,16 +394,20 @@ impl<'a, Message> EditorWidget<'a, Message> {
                     } else {
                         self.char_width
                     };
+                    if ch == '\n' {
+                        break;
+                    }
 
-                    if click_x <= current_x + char_width / 2.0 {
+                    // Check if click is before the middle of this character
+                    if click_x < current_x + char_width / 2.0 {
                         break;
                     }
 
                     current_x += char_width;
-                    column = i + 1;
+                    column += 1;
                 }
 
-                column.min(line_str.chars().count())
+                column
             } else {
                 0
             }
