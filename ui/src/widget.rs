@@ -118,6 +118,11 @@ where
             self.text_color,
             self.cursor_color,
             self.selection_color,
+            self.calculate_gutter_width(),
+            self.gutter_background_color,
+            self.line_number_color,
+            self.current_line_number_color,
+            self.gutter_padding,
         );
 
         // Render the editor content
@@ -171,6 +176,9 @@ where
                             let message =
                                 (self.on_message)(EditorMessage::MoveCursorTo(editor_position));
                             shell.publish(message);
+
+                            // Ensure cursor is visible after mouse click
+                            self.ensure_cursor_visible(widget_state, bounds, shell);
                         }
                     }
                     mouse::Event::ButtonReleased(mouse::Button::Left) => {
@@ -249,8 +257,17 @@ where
             Event::Keyboard(keyboard_event) => match keyboard_event {
                 iced::keyboard::Event::KeyPressed { key, modifiers, .. } => {
                     if let Some(editor_message) = self.handle_keyboard_input(key, modifiers) {
+                        // Check if this is a cursor movement command that should ensure cursor visibility
+                        let should_ensure_cursor_visible =
+                            self.is_cursor_movement_command(&editor_message);
+
                         let message = (self.on_message)(editor_message);
                         shell.publish(message);
+
+                        // After publishing the editor message, ensure cursor is visible if needed
+                        if should_ensure_cursor_visible {
+                            self.ensure_cursor_visible(widget_state, bounds, shell);
+                        }
                     }
                 }
                 _ => {}
@@ -261,6 +278,10 @@ where
 }
 
 /// The editor widget that renders text using custom drawing
+///
+/// This widget automatically ensures the cursor remains visible when moving
+/// via keyboard navigation (arrow keys, page up/down, etc.) by scrolling
+/// the viewport as needed with comfortable margins.
 pub struct EditorWidget<'a, Message> {
     editor: &'a Editor,
     font_size: f32,
@@ -272,6 +293,10 @@ pub struct EditorWidget<'a, Message> {
     selection_color: Color,
     shortcut_manager: ShortcutManager,
     on_message: Box<dyn Fn(EditorMessage) -> Message>,
+    gutter_background_color: Color,
+    line_number_color: Color,
+    current_line_number_color: Color,
+    gutter_padding: f32,
 }
 
 impl<'a, Message> EditorWidget<'a, Message> {
@@ -294,6 +319,10 @@ impl<'a, Message> EditorWidget<'a, Message> {
             selection_color: Color::from_rgba(0.3, 0.5, 1.0, 0.3),
             shortcut_manager: ShortcutManager::new(),
             on_message: Box::new(on_message),
+            gutter_background_color: Color::from_rgba(0.2, 0.2, 0.2, 0.0),
+            line_number_color: Color::from_rgb(0.7, 0.7, 0.7),
+            current_line_number_color: Color::from_rgb(1.0, 0.8, 0.2),
+            gutter_padding: 8.0,
         };
 
         widget
@@ -321,6 +350,36 @@ impl<'a, Message> EditorWidget<'a, Message> {
         self
     }
 
+    /// Configure the line number gutter colors
+    pub fn gutter(
+        mut self,
+        gutter_background_color: Color,
+        line_number_color: Color,
+        current_line_number_color: Color,
+        gutter_padding: f32,
+    ) -> Self {
+        self.gutter_background_color = gutter_background_color;
+        self.line_number_color = line_number_color;
+        self.current_line_number_color = current_line_number_color;
+        self.gutter_padding = gutter_padding;
+        self
+    }
+
+    /// Calculate the gutter width based on the number of lines in the editor
+    pub fn calculate_gutter_width(&self) -> f32 {
+        // Auto-calculate based on line count
+        let line_count = self.editor.current_buffer().rope().len_lines();
+        let digits = if line_count == 0 {
+            1
+        } else {
+            (line_count as f32).log10().floor() as usize + 1
+        };
+
+        // Minimum width for 2 digits, plus padding on both sides
+        let min_digits = 2.max(digits);
+        (min_digits as f32 * self.char_width) + (self.gutter_padding * 2.0)
+    }
+
     /// Measure character dimensions for the given font size
     /// Uses improved calculations based on typical monospace font characteristics
     fn measure_char_dimensions(font_size: f32) -> (f32, f32) {
@@ -339,8 +398,17 @@ impl<'a, Message> EditorWidget<'a, Message> {
 
     /// Convert screen point to editor position (line/column)
     fn point_to_position(&self, point: Point, viewport: &Viewport) -> Position {
+        let gutter_width = self.calculate_gutter_width();
+
+        // If click is within the gutter area, position cursor at start of line
+        let adjusted_point = if point.x < gutter_width {
+            Point::new(0.0, point.y)
+        } else {
+            Point::new(point.x - gutter_width, point.y)
+        };
+
         // Find the line that contains this Y position
-        let target_y = point.y; // point.y is already relative to widget bounds
+        let target_y = adjusted_point.y; // adjusted_point.y is already relative to widget bounds
 
         let line = if !viewport.partial_lines.is_empty() {
             let mut found_line = 0;
@@ -373,7 +441,7 @@ impl<'a, Message> EditorWidget<'a, Message> {
         let column = if line < rope.len_lines() {
             if let Some(line_text) = rope.get_line(line) {
                 let line_str = line_text.to_string();
-                let click_x = point.x + viewport.scroll_offset.0;
+                let click_x = adjusted_point.x + viewport.scroll_offset.0;
 
                 // Use the utility function for accurate tab-aware column calculation
                 utils::x_position_to_column(click_x, &line_str, self.char_width)
@@ -399,6 +467,163 @@ impl<'a, Message> EditorWidget<'a, Message> {
             self.shortcut_manager.handle_key_event(key_event)
         } else {
             None
+        }
+    }
+
+    /// Check if the editor message is a cursor movement command that should trigger cursor visibility check
+    fn is_cursor_movement_command(&self, message: &EditorMessage) -> bool {
+        matches!(
+            message,
+            EditorMessage::MoveCursor(_)
+                | EditorMessage::MoveCursorWithSelection(_)
+                | EditorMessage::MoveCursorTo(_)
+                | EditorMessage::ScrollToLine(_)
+        )
+    }
+
+    /// Check if cursor is visible with a comfortable margin
+    fn is_cursor_visible_with_margin(
+        &self,
+        cursor_position: Position,
+        viewport: &Viewport,
+    ) -> bool {
+        let cursor_y = cursor_position.line as f32 * self.line_height;
+        let cursor_x = {
+            let rope = self.editor.current_buffer().rope();
+            if cursor_position.line < rope.len_lines() {
+                if let Some(line) = rope.get_line(cursor_position.line) {
+                    let line_str = line.to_string();
+                    utils::calculate_column_x_position(
+                        cursor_position.column,
+                        &line_str,
+                        self.char_width,
+                    )
+                } else {
+                    cursor_position.column as f32 * self.char_width
+                }
+            } else {
+                cursor_position.column as f32 * self.char_width
+            }
+        };
+
+        // Define margins for comfortable scrolling
+        let scroll_margin_v = self.line_height * 2.0;
+        let scroll_margin_h = self.char_width * 4.0;
+
+        // Check vertical visibility with margin
+        let viewport_top = viewport.scroll_offset.1 + scroll_margin_v;
+        let viewport_bottom = viewport.scroll_offset.1 + viewport.size.1 - scroll_margin_v;
+        let cursor_line_top = cursor_y;
+        let cursor_line_bottom = cursor_y + self.line_height;
+
+        let v_visible = cursor_line_top >= viewport_top && cursor_line_bottom <= viewport_bottom;
+
+        // Check horizontal visibility with margin
+        let viewport_left = viewport.scroll_offset.0 + scroll_margin_h;
+        let viewport_right = viewport.scroll_offset.0 + viewport.size.0 - scroll_margin_h;
+        let cursor_right = cursor_x + self.char_width;
+
+        let h_visible = cursor_x >= viewport_left && cursor_right <= viewport_right;
+
+        v_visible && h_visible
+    }
+
+    /// Ensure the cursor is visible in the viewport by scrolling if necessary
+    fn ensure_cursor_visible(
+        &self,
+        widget_state: &mut WidgetState,
+        bounds: Rectangle,
+        shell: &mut Shell<'_, Message>,
+    ) {
+        let cursor_position = self.editor.current_cursor().position();
+        let viewport = &mut widget_state.viewport;
+
+        // Quick check: if cursor is already fully visible with some margin, no need to scroll
+        if self.is_cursor_visible_with_margin(cursor_position, viewport) {
+            return;
+        }
+
+        // Calculate cursor position in viewport coordinates
+        let cursor_y = cursor_position.line as f32 * self.line_height;
+        let cursor_x = {
+            let rope = self.editor.current_buffer().rope();
+            if cursor_position.line < rope.len_lines() {
+                if let Some(line) = rope.get_line(cursor_position.line) {
+                    let line_str = line.to_string();
+                    utils::calculate_column_x_position(
+                        cursor_position.column,
+                        &line_str,
+                        self.char_width,
+                    )
+                } else {
+                    cursor_position.column as f32 * self.char_width
+                }
+            } else {
+                cursor_position.column as f32 * self.char_width
+            }
+        };
+
+        // Calculate current scroll offset
+        let mut new_scroll_x = viewport.scroll_offset.0;
+        let mut new_scroll_y = viewport.scroll_offset.1;
+        let mut scroll_changed = false;
+
+        // Vertical scrolling: ensure cursor line is visible
+        let viewport_top = viewport.scroll_offset.1;
+        let viewport_bottom = viewport.scroll_offset.1 + viewport.size.1;
+        let cursor_line_top = cursor_y;
+        let cursor_line_bottom = cursor_y + self.line_height;
+
+        // Add some margin for better UX (show a few lines above/below cursor when possible)
+        let scroll_margin = self.line_height * 2.0;
+
+        if cursor_line_top < viewport_top + scroll_margin {
+            // Cursor is too close to the top or above visible area
+            new_scroll_y = (cursor_line_top - scroll_margin).max(0.0);
+            scroll_changed = true;
+        } else if cursor_line_bottom > viewport_bottom - scroll_margin {
+            // Cursor is too close to the bottom or below visible area
+            new_scroll_y = cursor_line_bottom + scroll_margin - viewport.size.1;
+            scroll_changed = true;
+        }
+
+        // Horizontal scrolling: ensure cursor column is visible
+        let viewport_left = viewport.scroll_offset.0;
+        let viewport_right = viewport.scroll_offset.0 + viewport.size.0;
+        let cursor_right = cursor_x + self.char_width; // Add character width for visibility
+
+        // Add some margin for better UX
+        let h_scroll_margin = self.char_width * 4.0;
+
+        if cursor_x < viewport_left + h_scroll_margin {
+            // Cursor is too close to the left or left of visible area
+            new_scroll_x = (cursor_x - h_scroll_margin).max(0.0);
+            scroll_changed = true;
+        } else if cursor_right > viewport_right - h_scroll_margin {
+            // Cursor is too close to the right or right of visible area
+            new_scroll_x = cursor_right + h_scroll_margin - viewport.size.0;
+            scroll_changed = true;
+        }
+
+        // Apply scroll bounds to prevent over-scrolling
+        if scroll_changed {
+            let buffer = self.editor.current_buffer();
+            let line_count = buffer.line_count();
+            let content_height = line_count as f32 * self.line_height;
+            let max_scroll_y = (content_height - bounds.height).max(0.0);
+            let max_content_width = self.calculate_max_content_width();
+            let max_scroll_x = (max_content_width - bounds.width).max(0.0);
+
+            let clamped_scroll_x = new_scroll_x.max(0.0).min(max_scroll_x);
+            let clamped_scroll_y = new_scroll_y.max(0.0).min(max_scroll_y);
+
+            // Only update if the scroll position actually changed
+            if (clamped_scroll_x - viewport.scroll_offset.0).abs() > 0.1
+                || (clamped_scroll_y - viewport.scroll_offset.1).abs() > 0.1
+            {
+                viewport.set_scroll_offset(clamped_scroll_x, clamped_scroll_y);
+                shell.request_redraw();
+            }
         }
     }
 
@@ -550,27 +775,6 @@ pub fn editor_widget<'a, Message: 'a + Clone>(
     Element::new(EditorWidget::new(editor, on_message))
 }
 
-/// Get character dimensions for a given font size
-/// This is a utility function that can be used by applications to calculate
-/// viewport by calling `editor.set_char_dimensions(char_width, line_height)`.
-///
-/// # Arguments
-/// * `font_size` - The font size in pixels
-///
-/// # Returns
-/// A tuple of (char_width, line_height) in pixels
-///
-/// # Example
-/// ```rust
-/// let (char_width, line_height) = get_char_dimensions(14.0);
-/// editor.set_char_dimensions(char_width, line_height);
-/// ```
-///
-/// This ensures the editor's viewport calculations match the widget's text rendering.
-pub fn get_char_dimensions(font_size: f32) -> (f32, f32) {
-    utils::calculate_char_dimensions(font_size)
-}
-
 /// Convenience function to create a styled editor widget
 pub fn styled_editor<'a, Message: 'a + Clone>(
     editor: &'a Editor,
@@ -578,23 +782,43 @@ pub fn styled_editor<'a, Message: 'a + Clone>(
     dark_theme: bool,
     on_message: impl Fn(EditorMessage) -> Message + 'static,
 ) -> EditorWidget<'a, Message> {
-    let colors = if dark_theme {
+    let (colors, gutter_colors) = if dark_theme {
         (
-            Color::from_rgb(0.12, 0.12, 0.15),    // background
-            Color::from_rgb(0.9, 0.9, 0.9),       // text
-            Color::from_rgb(1.0, 1.0, 1.0),       // cursor
-            Color::from_rgba(0.3, 0.5, 1.0, 0.3), // selection
+            (
+                Color::from_rgb(0.12, 0.12, 0.15),    // background
+                Color::from_rgb(0.9, 0.9, 0.9),       // text
+                Color::from_rgb(1.0, 1.0, 1.0),       // cursor
+                Color::from_rgba(0.3, 0.5, 1.0, 0.3), // selection
+            ),
+            (
+                Color::from_rgba(0.2, 0.2, 0.2, 0.0), // gutter background (more opaque)
+                Color::from_rgb(0.7, 0.7, 0.7),       // line number (more visible)
+                Color::from_rgb(1.0, 0.8, 0.2),       // current line number (yellow highlight)
+            ),
         )
     } else {
         (
-            Color::from_rgb(1.0, 1.0, 1.0),       // background
-            Color::from_rgb(0.1, 0.1, 0.1),       // text
-            Color::from_rgb(0.0, 0.0, 0.0),       // cursor
-            Color::from_rgba(0.3, 0.5, 1.0, 0.3), // selection
+            (
+                Color::from_rgb(1.0, 1.0, 1.0),       // background
+                Color::WHITE,                         // text
+                Color::from_rgb(0.0, 0.0, 0.0),       // cursor
+                Color::from_rgba(0.3, 0.5, 1.0, 0.3), // selection
+            ),
+            (
+                Color::from_rgba(0.9, 0.9, 0.9, 0.0), // gutter background (more opaque)
+                Color::from_rgb(0.4, 0.4, 0.4),       // line number (darker, more visible)
+                Color::from_rgb(0.8, 0.4, 0.0),       // current line number (orange highlight)
+            ),
         )
     };
 
     EditorWidget::new(editor, on_message)
         .font_size(font_size)
         .colors(colors.0, colors.1, colors.2, colors.3)
+        .gutter(
+            gutter_colors.0, // gutter_background_color
+            gutter_colors.1, // line_number_color
+            gutter_colors.2, // current_line_number_color
+            8.0,             // gutter_padding
+        )
 }

@@ -126,6 +126,28 @@ impl Viewport {
         line >= self.visible_lines.0 && line <= self.visible_lines.1
     }
 
+    /// Check if a position (line, column) is currently visible in the viewport
+    pub fn is_position_visible(&self, line: usize, column: usize, char_width: f32) -> bool {
+        // Check vertical visibility
+        if !self.is_line_visible(line) {
+            return false;
+        }
+
+        // Check horizontal visibility (approximate)
+        let line_y = line as f32 * self.line_height;
+        let column_x = column as f32 * char_width; // Simplified, doesn't handle tabs
+
+        let viewport_left = self.scroll_offset.0;
+        let viewport_right = self.scroll_offset.0 + self.size.0;
+        let viewport_top = self.scroll_offset.1;
+        let viewport_bottom = self.scroll_offset.1 + self.size.1;
+
+        line_y >= viewport_top
+            && line_y + self.line_height <= viewport_bottom
+            && column_x >= viewport_left
+            && column_x + char_width <= viewport_right
+    }
+
     /// Get scroll bounds to prevent over-scrolling
     pub fn clamp_scroll_offset(&self, offset: (f32, f32), content_lines: usize) -> (f32, f32) {
         let (x, y) = offset;

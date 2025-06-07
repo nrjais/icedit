@@ -68,6 +68,13 @@ pub struct EditorRenderer {
     cursor_color: Color,
     selection_color: Color,
 
+    // Gutter properties
+    gutter_width: f32,
+    gutter_background_color: Color,
+    line_number_color: Color,
+    current_line_number_color: Color,
+    gutter_padding: f32,
+
     // Scrollbar properties
     scrollbar_width: f32,
     scrollbar_track_color: Color,
@@ -114,6 +121,11 @@ impl EditorRenderer {
         text_color: Color,
         cursor_color: Color,
         selection_color: Color,
+        gutter_width: f32,
+        gutter_background_color: Color,
+        line_number_color: Color,
+        current_line_number_color: Color,
+        gutter_padding: f32,
     ) -> Self {
         Self {
             font_size,
@@ -123,6 +135,13 @@ impl EditorRenderer {
             text_color,
             cursor_color,
             selection_color,
+
+            // Gutter properties
+            gutter_width,
+            gutter_background_color,
+            line_number_color,
+            current_line_number_color,
+            gutter_padding,
 
             // Scrollbar styling
             scrollbar_width: 12.0,
@@ -250,23 +269,26 @@ impl EditorRenderer {
         // Step 1: Draw background
         self.draw_background(renderer, bounds);
 
-        // Step 2: Get visible lines from buffer directly
+        // Step 2: Draw gutter if enabled
+        self.draw_gutter(renderer, bounds, editor, viewport, cursor_position);
+
+        // Step 3: Get visible lines from buffer directly
         let visible_lines = self.get_visible_lines_with_partial(editor, viewport);
 
-        // Step 3: Batch all operations with zero-allocation hot path
+        // Step 4: Batch all operations with zero-allocation hot path
         let (text_ops, selection_quads) =
             self.prepare_render_operations(&visible_lines, editor_bounds, viewport, selection);
 
-        // Step 4: Batch render selections first (behind text)
+        // Step 5: Batch render selections first (behind text)
         self.render_selections_batched(renderer, &selection_quads);
 
-        // Step 5: Batch render all text operations
+        // Step 6: Batch render all text operations
         self.render_text_batched(renderer, &text_ops);
 
-        // Step 6: Draw cursor (on top of text)
+        // Step 7: Draw cursor (on top of text)
         self.draw_cursor_optimized(renderer, editor_bounds, cursor_position, viewport, editor);
 
-        // Step 7: Draw scrollbars last (on top of everything)
+        // Step 8: Draw scrollbars last (on top of everything)
         self.render_scrollbars(renderer, vertical_scrollbar, horizontal_scrollbar);
 
         // Update scrollbar cache
@@ -422,7 +444,7 @@ impl EditorRenderer {
         (vertical_scrollbar, horizontal_scrollbar)
     }
 
-    /// Calculate the bounds for editor content, accounting for scrollbars
+    /// Calculate the bounds for editor content, accounting for scrollbars and gutter
     fn calculate_editor_content_bounds(
         &self,
         bounds: Rectangle,
@@ -440,10 +462,13 @@ impl EditorRenderer {
             0.0
         };
 
+        // Always account for gutter width since it's always enabled, plus 4px padding
+        let gutter_offset = self.gutter_width + 4.0;
+
         Rectangle::new(
-            bounds.position(),
+            Point::new(bounds.x + gutter_offset, bounds.y),
             Size::new(
-                bounds.width - width_reduction,
+                bounds.width - width_reduction - gutter_offset,
                 bounds.height - height_reduction,
             ),
         )
@@ -786,6 +811,7 @@ impl EditorRenderer {
         let cursor_y = cursor_position.line as f32 * self.line_height - viewport.scroll_offset.1;
 
         // Get the line content to calculate accurate X position with tab handling
+        // Note: bounds.x already includes gutter offset from calculate_editor_content_bounds
         let cursor_x = {
             let rope = editor.current_buffer().rope();
             if cursor_position.line < rope.len_lines() {
@@ -838,6 +864,80 @@ impl EditorRenderer {
         self.draw_cursor_optimized(renderer, bounds, cursor_position, viewport, editor);
     }
 
+    /// Draw the line number gutter (always enabled)
+    fn draw_gutter<Renderer>(
+        &self,
+        renderer: &mut Renderer,
+        bounds: Rectangle,
+        _editor: &Editor,
+        viewport: &Viewport,
+        cursor_position: Position,
+    ) where
+        Renderer: iced::advanced::Renderer + iced::advanced::text::Renderer<Font = Font>,
+    {
+        if self.gutter_width <= 0.0 {
+            return;
+        }
+
+        // Draw gutter background
+        let gutter_bounds = Rectangle::new(
+            bounds.position(),
+            Size::new(self.gutter_width, bounds.height),
+        );
+
+        let gutter_quad = Quad {
+            bounds: gutter_bounds,
+            border: iced::Border::default(),
+            shadow: iced::Shadow::default(),
+            snap: false,
+        };
+
+        renderer.fill_quad(gutter_quad, self.gutter_background_color);
+
+        // Draw line numbers for visible lines using the same logic as text rendering
+        for partial_line in &viewport.partial_lines {
+            let line_index = partial_line.line_index;
+            let line_number = line_index + 1; // Line numbers are 1-based
+            let y_position = bounds.y + partial_line.y_offset;
+
+            // Skip if line is not visible
+            if y_position + self.line_height < bounds.y || y_position > bounds.y + bounds.height {
+                continue;
+            }
+
+            // Choose color based on whether this is the current line
+            let color = if line_index == cursor_position.line {
+                self.current_line_number_color
+            } else {
+                self.line_number_color
+            };
+
+            // Render line number - using simple left-aligned approach first
+            let line_number_text = line_number.to_string();
+            let text_position = Point::new(bounds.x + self.gutter_padding, y_position);
+            let text_bounds = Rectangle::new(
+                text_position,
+                Size::new(self.gutter_width - self.gutter_padding, self.line_height),
+            );
+
+            let text = iced::advanced::text::Text {
+                content: line_number_text,
+                bounds: text_bounds.size(),
+                size: iced::Pixels(self.font_size),
+                line_height: iced::advanced::text::LineHeight::Absolute(iced::Pixels(
+                    self.line_height,
+                )),
+                font: Font::MONOSPACE,
+                align_x: iced::advanced::text::Alignment::Left,
+                align_y: iced::alignment::Vertical::Top,
+                shaping: iced::advanced::text::Shaping::Basic,
+                wrapping: iced::advanced::text::Wrapping::None,
+            };
+
+            renderer.fill_text(text, text_position, color, text_bounds);
+        }
+    }
+
     /// Clean up object pools to prevent memory bloat
     pub fn cleanup_pools(&mut self) {
         if self.text_operation_pool.capacity() > 128 {
@@ -856,19 +956,5 @@ impl EditorRenderer {
     pub fn get_max_content_width(&self) -> Option<f32> {
         self.cached_max_line_width
             .map(|w| w + self.char_width * 2.0)
-    }
-}
-
-impl Default for EditorRenderer {
-    fn default() -> Self {
-        Self::new(
-            14.0,                                 // font_size
-            18.0,                                 // line_height
-            8.0,                                  // char_width
-            Color::from_rgb(0.1, 0.1, 0.1),       // background_color
-            Color::from_rgb(0.9, 0.9, 0.9),       // text_color
-            Color::from_rgb(1.0, 1.0, 1.0),       // cursor_color
-            Color::from_rgba(0.3, 0.6, 1.0, 0.3), // selection_color
-        )
     }
 }

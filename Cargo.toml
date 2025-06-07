@@ -1,23 +1,23 @@
-[workspace]
-members = ["core", "ui"]
-resolver = "2"
-
-[workspace.dependencies]
-ropey = "1.6"
-thiserror = "2.0.12"
-tokio = { version = "1.0", features = ["full"] }
-
 [package]
 name = "icedit"
 version = "0.1.0"
 edition = "2021"
 description = "A modular text editor with core and UI components"
 
-[dependencies]
-icedit-core = { path = "core" }
-icedit-ui = { path = "ui" }
-iced = { features = ["canvas", "advanced", "debug"] , git = "https://github.com/iced-rs/iced.git", branch = "master"}
+[workspace]
+resolver = "2"
+members = ["core", "ui"]
+
+[workspace.dependencies]
+ropey = "1.6"
+thiserror = "2.0.12"
+tokio = { version = "1.0", features = ["full"] }
 
 [[example]]
 name = "iced_editor"
 required-features = []
+
+[dependencies]
+iced = { branch = "master", features = ["advanced", "canvas", "debug"], git = "https://github.com/iced-rs/iced.git" }
+icedit-core = { path = "core" }
+icedit-ui = { path = "ui" }
