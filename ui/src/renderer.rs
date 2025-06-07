@@ -9,6 +9,30 @@ use iced::{
 use icedit_core::{Editor, Position, Selection};
 use std::collections::VecDeque;
 
+/// Information about visible columns in a line for horizontal scrolling optimization
+#[derive(Debug, Clone, Copy)]
+pub struct PartialColumnView {
+    /// Starting column index (inclusive)
+    pub start_column: usize,
+    /// Ending column index (exclusive)
+    pub end_column: usize,
+    /// X offset from the start of the visible content
+    pub x_offset: f32,
+    /// Width of the visible portion
+    pub visible_width: f32,
+}
+
+impl PartialColumnView {
+    pub fn new(start_column: usize, end_column: usize, x_offset: f32, visible_width: f32) -> Self {
+        Self {
+            start_column,
+            end_column,
+            x_offset,
+            visible_width,
+        }
+    }
+}
+
 /// Scrollbar information for rendering
 #[derive(Debug, Clone, Copy)]
 pub struct ScrollbarInfo {
@@ -48,7 +72,6 @@ pub struct EditorRenderer {
     scrollbar_width: f32,
     scrollbar_track_color: Color,
     scrollbar_thumb_color: Color,
-    scrollbar_thumb_hover_color: Color,
     min_scrollbar_thumb_size: f32,
 
     // Optimization caches and pools
@@ -69,6 +92,11 @@ pub struct EditorRenderer {
     // Frame-based caching
     frame_counter: u64,
     last_render_frame: u64,
+
+    // Content width caching for optimization
+    cached_max_line_width: Option<f32>,
+    cached_max_line_index: Option<usize>,
+    content_width_dirty: bool,
 }
 
 struct TextOperation {
@@ -100,7 +128,6 @@ impl EditorRenderer {
             scrollbar_width: 12.0,
             scrollbar_track_color: Color::from_rgba(0.5, 0.5, 0.5, 0.2),
             scrollbar_thumb_color: Color::from_rgba(0.6, 0.6, 0.6, 0.8),
-            scrollbar_thumb_hover_color: Color::from_rgba(0.7, 0.7, 0.7, 0.9),
             min_scrollbar_thumb_size: 16.0,
 
             // Initialize pools with reasonable capacity
@@ -120,6 +147,11 @@ impl EditorRenderer {
 
             frame_counter: 0,
             last_render_frame: 0,
+
+            // Content width caching for optimization
+            cached_max_line_width: None,
+            cached_max_line_index: None,
+            content_width_dirty: true,
         }
     }
 
@@ -243,27 +275,44 @@ impl EditorRenderer {
         self.last_content_dimensions = Some(content_dimensions);
     }
 
-    /// Calculate the total content dimensions for scrollbar calculations
-    fn calculate_content_dimensions(&self, editor: &Editor) -> (f32, f32) {
+    /// Calculate the total content dimensions for scrollbar calculations with caching
+    fn calculate_content_dimensions(&mut self, editor: &Editor) -> (f32, f32) {
         let rope = editor.current_buffer().rope();
         let line_count = rope.len_lines();
 
         // Calculate content height
         let content_height = line_count as f32 * self.line_height;
 
-        // Calculate content width by finding the longest line
-        let mut max_width: f32 = 0.0;
-        for line_idx in 0..line_count.min(1000) {
-            // Limit to avoid performance issues
-            if let Some(line) = rope.get_line(line_idx) {
-                let line_str = line.to_string();
-                let width = self.calculate_line_width(&line_str);
-                max_width = max_width.max(width);
-            }
-        }
+        // Use cached content width if available and not dirty
+        let content_width = if self.content_width_dirty || self.cached_max_line_width.is_none() {
+            let mut max_width: f32 = 0.0;
+            let mut max_line_idx = 0;
 
-        // Add some padding to content width
-        let content_width = max_width + self.char_width * 4.0;
+            // Efficiently calculate max width by examining all visible lines plus some buffer
+            let lines_to_check = line_count.min(2000); // Increased limit for better accuracy
+
+            for line_idx in 0..lines_to_check {
+                if let Some(line) = rope.get_line(line_idx) {
+                    let line_str = line.to_string();
+                    let width = self.calculate_line_width(&line_str);
+                    if width > max_width {
+                        max_width = width;
+                        max_line_idx = line_idx;
+                    }
+                }
+            }
+
+            // Cache the results
+            self.cached_max_line_width = Some(max_width);
+            self.cached_max_line_index = Some(max_line_idx);
+            self.content_width_dirty = false;
+
+            // Add some padding to content width to prevent clipping
+            max_width + self.char_width * 2.0
+        } else {
+            // Use cached value with padding
+            self.cached_max_line_width.unwrap() + self.char_width * 2.0
+        };
 
         (content_width, content_height)
     }
@@ -538,13 +587,34 @@ impl EditorRenderer {
             let y_position = bounds.y + partial_line.y_offset + partial_line.clip_top;
             let x_position = bounds.x - viewport.scroll_offset.0;
 
+            // Calculate visible column range for horizontal scrolling optimization
+            let column_view = self.calculate_visible_columns(
+                line_content,
+                viewport.scroll_offset.0,
+                viewport.size.0,
+            );
+
             // Create text operation
             text_ops.push(TextOperation {
-                content: line_content.clone(),
-                position: Point::new(x_position, y_position),
+                content: if let Some(col_view) = column_view {
+                    // Only render the visible portion of the line
+                    self.extract_visible_line_content(line_content, &col_view)
+                } else {
+                    line_content.clone()
+                },
+                position: Point::new(
+                    x_position + column_view.map_or(0.0, |cv| cv.x_offset),
+                    y_position,
+                ),
                 bounds: Rectangle::new(
-                    Point::new(x_position, y_position),
-                    Size::new(bounds.width, visible_height),
+                    Point::new(
+                        x_position + column_view.map_or(0.0, |cv| cv.x_offset),
+                        y_position,
+                    ),
+                    Size::new(
+                        column_view.map_or(bounds.width, |cv| cv.visible_width),
+                        visible_height,
+                    ),
                 ),
             });
 
@@ -612,6 +682,90 @@ impl EditorRenderer {
         }
 
         x
+    }
+
+    /// Calculate which columns are visible given horizontal scroll offset and viewport width
+    fn calculate_visible_columns(
+        &self,
+        line_content: &str,
+        horizontal_scroll: f32,
+        viewport_width: f32,
+    ) -> Option<PartialColumnView> {
+        let line_width = self.calculate_line_width(line_content);
+
+        // If the entire line fits in the viewport, no clipping needed
+        if line_width <= viewport_width && horizontal_scroll <= 0.0 {
+            return None;
+        }
+
+        // Find start and end columns based on horizontal scroll
+        let mut start_column = 0;
+        let mut end_column = line_content.chars().count();
+        let mut x_offset = 0.0;
+
+        // Find the start column
+        let mut current_x = 0.0;
+        let mut char_index = 0;
+        for ch in line_content.chars() {
+            if current_x >= horizontal_scroll {
+                start_column = char_index;
+                x_offset = current_x - horizontal_scroll;
+                break;
+            }
+
+            if ch == '\t' {
+                let tab_stop = ((current_x / self.tab_width).floor() + 1.0) * self.tab_width;
+                current_x = tab_stop;
+            } else {
+                current_x += self.char_width;
+            }
+            char_index += 1;
+        }
+
+        // Find the end column
+        let visible_end = horizontal_scroll + viewport_width;
+        current_x = 0.0;
+        char_index = 0;
+        for ch in line_content.chars() {
+            if current_x >= visible_end {
+                end_column = char_index;
+                break;
+            }
+
+            if ch == '\t' {
+                let tab_stop = ((current_x / self.tab_width).floor() + 1.0) * self.tab_width;
+                current_x = tab_stop;
+            } else {
+                current_x += self.char_width;
+            }
+            char_index += 1;
+        }
+
+        let visible_width = f32::min(viewport_width, line_width - horizontal_scroll);
+
+        Some(PartialColumnView::new(
+            start_column,
+            end_column,
+            x_offset,
+            visible_width,
+        ))
+    }
+
+    /// Extract only the visible portion of a line based on column view
+    fn extract_visible_line_content(
+        &self,
+        line_content: &str,
+        column_view: &PartialColumnView,
+    ) -> String {
+        let chars: Vec<char> = line_content.chars().collect();
+        let start = column_view.start_column.min(chars.len());
+        let end = column_view.end_column.min(chars.len());
+
+        if start >= end {
+            return String::new();
+        }
+
+        chars[start..end].iter().collect()
     }
 
     fn render_selections_batched<Renderer>(&self, renderer: &mut Renderer, quads: &[Quad])
@@ -713,6 +867,19 @@ impl EditorRenderer {
         if self.text_operation_pool.capacity() > 128 {
             self.text_operation_pool.shrink_to(64);
         }
+    }
+
+    /// Invalidate content width cache when editor content changes
+    pub fn invalidate_content_cache(&mut self) {
+        self.content_width_dirty = true;
+        self.cached_max_line_width = None;
+        self.cached_max_line_index = None;
+    }
+
+    /// Get the maximum content width for limiting horizontal scrolling
+    pub fn get_max_content_width(&self) -> Option<f32> {
+        self.cached_max_line_width
+            .map(|w| w + self.char_width * 2.0)
     }
 }
 
