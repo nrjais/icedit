@@ -329,12 +329,165 @@ impl<'a, Message> EditorWidget<'a, Message> {
 
         core_key.map(|key| KeyEvent::new(key, core_modifiers))
     }
+
+    /// Calculate auto-scroll delta based on current mouse position
+    fn calculate_auto_scroll_delta(&self, widget_state: &mut WidgetState, bounds: Rectangle) {
+        if let Some(relative_position) = widget_state.current_mouse_position {
+            // Auto-scroll parameters
+            let scroll_margin = 30.0; // Pixels from edge to trigger scrolling
+            let max_scroll_speed = 2.0 * self.line_height; // Maximum scroll speed per frame
+            let min_threshold = 5.0; // Minimum distance to start scrolling
+            let outside_boost = 2.0; // Speed multiplier when completely outside widget
+
+            let mut scroll_delta = Vector::ZERO;
+
+            // Vertical scrolling - make speed proportional to distance from edge
+            if relative_position.y < scroll_margin {
+                let distance = scroll_margin - relative_position.y;
+                if distance > min_threshold {
+                    let speed_factor = (distance / scroll_margin).min(1.0);
+                    let boost = if relative_position.y < 0.0 {
+                        outside_boost
+                    } else {
+                        1.0
+                    };
+                    scroll_delta.y = -max_scroll_speed * speed_factor * boost;
+                }
+            } else if relative_position.y > bounds.height - scroll_margin {
+                let distance = relative_position.y - (bounds.height - scroll_margin);
+                if distance > min_threshold {
+                    let speed_factor = (distance / scroll_margin).min(1.0);
+                    let boost = if relative_position.y > bounds.height {
+                        outside_boost
+                    } else {
+                        1.0
+                    };
+                    scroll_delta.y = max_scroll_speed * speed_factor * boost;
+                }
+            }
+
+            // Horizontal scrolling - make speed proportional to distance from edge
+            if relative_position.x < scroll_margin {
+                let distance = scroll_margin - relative_position.x;
+                if distance > min_threshold {
+                    let speed_factor = (distance / scroll_margin).min(1.0);
+                    let boost = if relative_position.x < 0.0 {
+                        outside_boost
+                    } else {
+                        1.0
+                    };
+                    scroll_delta.x = -max_scroll_speed * speed_factor * boost;
+                }
+            } else if relative_position.x > bounds.width - scroll_margin {
+                let distance = relative_position.x - (bounds.width - scroll_margin);
+                if distance > min_threshold {
+                    let speed_factor = (distance / scroll_margin).min(1.0);
+                    let boost = if relative_position.x > bounds.width {
+                        outside_boost
+                    } else {
+                        1.0
+                    };
+                    scroll_delta.x = max_scroll_speed * speed_factor * boost;
+                }
+            }
+
+            widget_state.auto_scroll_delta = scroll_delta;
+            widget_state.is_auto_scrolling = scroll_delta != Vector::ZERO;
+        } else {
+            widget_state.auto_scroll_delta = Vector::ZERO;
+            widget_state.is_auto_scrolling = false;
+        }
+    }
+
+    /// Apply auto-scroll and update selection
+    fn apply_auto_scroll_and_selection(
+        &self,
+        widget_state: &WidgetState,
+        shell: &mut Shell<'_, Message>,
+        bounds: Rectangle,
+    ) {
+        // Apply auto-scroll if needed
+        if widget_state.auto_scroll_delta != Vector::ZERO {
+            let scroll_message = (self.on_message)(EditorMessage::Scroll(
+                widget_state.auto_scroll_delta.x,
+                widget_state.auto_scroll_delta.y,
+            ));
+            shell.publish(scroll_message);
+
+            // Update viewport after scrolling
+            let viewport_message =
+                (self.on_message)(EditorMessage::UpdateViewport(bounds.width, bounds.height));
+            shell.publish(viewport_message);
+        }
+
+        // Update selection if we have mouse position and drag start
+        if let (Some(relative_position), Some(start_position)) = (
+            widget_state.current_mouse_position,
+            widget_state.drag_start_position,
+        ) {
+            // Calculate current position considering scroll and viewport
+            let current_position = if relative_position.x >= 0.0
+                && relative_position.x <= bounds.width
+                && relative_position.y >= 0.0
+                && relative_position.y <= bounds.height
+            {
+                // Mouse is within viewport - use exact position
+                self.point_to_position(relative_position)
+            } else {
+                // Mouse is outside viewport - calculate position considering scroll
+                let viewport = self.editor.viewport();
+                let adjusted_point = Point::new(
+                    relative_position.x + viewport.scroll_offset.0,
+                    relative_position.y + viewport.scroll_offset.1,
+                );
+
+                // Convert to line/column coordinates
+                let line = ((adjusted_point.y / self.line_height).max(0.0) as usize)
+                    .min(self.editor.current_buffer().line_count().saturating_sub(1));
+
+                let column = if adjusted_point.x >= 0.0 {
+                    (adjusted_point.x / self.char_width).max(0.0) as usize
+                } else {
+                    0
+                };
+
+                // Clamp column to actual line length
+                let buffer = self.editor.current_buffer();
+                let max_column = if let Some(line_rope) = buffer.rope().get_line(line) {
+                    let line_str = line_rope.to_string();
+                    let line_content = line_str.trim_end_matches('\n');
+                    line_content.chars().count()
+                } else {
+                    0
+                };
+
+                Position::new(line, column.min(max_column))
+            };
+
+            // Set selection from drag start to current position
+            let message = (self.on_message)(EditorMessage::SetSelection(
+                start_position,
+                current_position,
+            ));
+            shell.publish(message);
+        }
+    }
 }
 
-/// Widget state for tracking viewport initialization
+/// Widget state for tracking viewport initialization and mouse drag state
 #[derive(Debug, Clone, Default)]
 struct WidgetState {
     viewport: Rectangle,
+    /// Tracks if we're currently dragging (selecting with mouse)
+    is_dragging: bool,
+    /// The position where dragging started (for selection anchor)
+    drag_start_position: Option<Position>,
+    /// Current mouse position for auto-scroll calculations
+    current_mouse_position: Option<Point>,
+    /// Current auto-scroll delta for smooth scrolling
+    auto_scroll_delta: Vector,
+    /// Whether auto-scrolling is currently active
+    is_auto_scrolling: bool,
 }
 
 impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer> for EditorWidget<'_, Message>
@@ -426,23 +579,58 @@ where
                     let relative_position =
                         Point::new(cursor_position.x - bounds.x, cursor_position.y - bounds.y);
                     let editor_position = self.point_to_position(relative_position);
+
+                    // Start drag selection
+                    widget_state.is_dragging = true;
+                    widget_state.drag_start_position = Some(editor_position);
+                    widget_state.current_mouse_position = Some(relative_position);
+                    widget_state.auto_scroll_delta = Vector::ZERO;
+                    widget_state.is_auto_scrolling = false;
+
+                    // Move cursor to clicked position and clear any existing selection
                     let message = (self.on_message)(EditorMessage::MoveCursorTo(editor_position));
                     shell.publish(message);
                 }
             }
             Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
-                if let Some(cursor_position) = cursor.position_in(layout.bounds()) {
-                    // Convert cursor position to relative coordinates within the widget
-                    let bounds = layout.bounds();
-                    let relative_position =
-                        Point::new(cursor_position.x - bounds.x, cursor_position.y - bounds.y);
-                    let editor_position = self.point_to_position(relative_position);
-                    let message = (self.on_message)(EditorMessage::MoveCursorTo(editor_position));
-                    shell.publish(message);
+                if widget_state.is_dragging {
+                    // End drag selection and auto-scrolling
+                    widget_state.is_dragging = false;
+                    widget_state.drag_start_position = None;
+                    widget_state.current_mouse_position = None;
+                    widget_state.auto_scroll_delta = Vector::ZERO;
+                    widget_state.is_auto_scrolling = false;
                 }
             }
             Event::Mouse(mouse::Event::CursorMoved { .. }) => {
-                // TODO: Handle selection
+                if widget_state.is_dragging {
+                    let bounds = layout.bounds();
+
+                    // Get absolute cursor position (might be outside widget bounds during drag)
+                    if let Some(absolute_position) = cursor.position() {
+                        // Calculate relative position (can be negative or beyond bounds)
+                        let relative_position = Point::new(
+                            absolute_position.x - bounds.x,
+                            absolute_position.y - bounds.y,
+                        );
+
+                        // Store current mouse position for smooth scrolling
+                        widget_state.current_mouse_position = Some(relative_position);
+
+                        // Calculate auto-scroll delta but don't apply it immediately
+                        self.calculate_auto_scroll_delta(widget_state, bounds);
+
+                        // Apply scroll and selection update immediately for responsiveness
+                        self.apply_auto_scroll_and_selection(widget_state, shell, bounds);
+                    }
+                }
+            }
+            Event::Window(iced::window::Event::RedrawRequested(_)) => {
+                // Handle smooth auto-scrolling on window redraws for 60fps smoothness
+                if widget_state.is_dragging && widget_state.is_auto_scrolling {
+                    let bounds = layout.bounds();
+                    self.apply_auto_scroll_and_selection(widget_state, shell, bounds);
+                }
             }
             Event::Keyboard(iced::keyboard::Event::KeyPressed {
                 key,

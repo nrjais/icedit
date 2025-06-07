@@ -180,6 +180,7 @@ impl Editor {
 
             EditorMessage::StartSelection => self.handle_start_selection(),
             EditorMessage::EndSelection => self.handle_end_selection(),
+            EditorMessage::SetSelection(start, end) => self.handle_set_selection(start, end),
             EditorMessage::SelectAll => self.handle_select_all(),
             EditorMessage::SelectLine => self.handle_select_line(),
             EditorMessage::SelectWord => self.handle_select_word(),
@@ -500,6 +501,15 @@ impl Editor {
         } else {
             EditorResponse::Success
         }
+    }
+
+    fn handle_set_selection(&mut self, start: Position, end: Position) -> EditorResponse {
+        let selection = Selection::from_positions(start, end);
+        self.selection = Some(selection.clone());
+        // Set cursor to the end position of the selection
+        self.cursor.set_position(end);
+        self.ensure_cursor_visible();
+        EditorResponse::SelectionChanged(Some(selection))
     }
 
     fn handle_select_all(&mut self) -> EditorResponse {

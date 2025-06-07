@@ -21,6 +21,8 @@ pub enum EditorMessage {
     // Selection
     StartSelection,
     EndSelection,
+    /// Set selection between two positions directly
+    SetSelection(Position, Position),
     SelectAll,
     SelectLine,
     SelectWord,
