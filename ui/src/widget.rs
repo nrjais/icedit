@@ -227,7 +227,8 @@ where
                             let line_count = buffer.line_count();
                             let content_height = line_count as f32 * self.line_height;
                             let max_scroll_y = (content_height - bounds.height).max(0.0);
-                            let max_scroll_x = 2000.0; // Reasonable horizontal limit
+                            let max_content_width = self.calculate_max_content_width();
+                            let max_scroll_x = (max_content_width - bounds.width).max(0.0);
 
                             let clamped_offset = (
                                 new_offset.0.max(0.0).min(max_scroll_x),
@@ -341,6 +342,46 @@ impl<'a, Message> EditorWidget<'a, Message> {
     /// Get the current character dimensions for use by the parent application
     pub fn char_dimensions(&self) -> (f32, f32) {
         (self.char_width, self.line_height)
+    }
+
+    /// Calculate the maximum content width for horizontal scroll limiting
+    fn calculate_max_content_width(&self) -> f32 {
+        let rope = self.editor.current_buffer().rope();
+        let line_count = rope.len_lines();
+        let mut max_width: f32 = 0.0;
+
+        // Check up to 1000 lines for performance (can be adjusted based on needs)
+        let lines_to_check = line_count.min(1000);
+
+        for line_idx in 0..lines_to_check {
+            if let Some(line) = rope.get_line(line_idx) {
+                let line_str = line.to_string();
+                let width = self.calculate_line_width(&line_str);
+                if width > max_width {
+                    max_width = width;
+                }
+            }
+        }
+
+        // Add padding to prevent clipping
+        max_width + self.char_width * 2.0
+    }
+
+    /// Calculate the width of a line accounting for tabs
+    fn calculate_line_width(&self, line: &str) -> f32 {
+        let mut width = 0.0;
+        let tab_width = self.char_width * 4.0; // 4 spaces per tab
+
+        for ch in line.chars() {
+            if ch == '\t' {
+                // Tab alignment to next tab stop
+                let tab_stop = ((width / tab_width).floor() + 1.0) * tab_width;
+                width = tab_stop;
+            } else if ch != '\n' {
+                width += self.char_width;
+            }
+        }
+        width
     }
 
     /// Convert screen point to editor position (line/column)
@@ -534,7 +575,8 @@ impl<'a, Message> EditorWidget<'a, Message> {
             let line_count = buffer.line_count();
             let content_height = line_count as f32 * self.line_height;
             let max_scroll_y = (content_height - bounds.height).max(0.0);
-            let max_scroll_x = 2000.0; // Reasonable horizontal limit
+            let max_content_width = self.calculate_max_content_width();
+            let max_scroll_x = (max_content_width - bounds.width).max(0.0);
 
             let clamped_offset = (
                 new_offset.0.max(0.0).min(max_scroll_x),
