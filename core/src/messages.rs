@@ -48,9 +48,6 @@ pub enum EditorMessage {
 
     // View operations
     ScrollToLine(usize),
-
-    // Custom commands
-    Command(String, Vec<String>),
 }
 
 #[derive(Debug, Clone, PartialEq)]

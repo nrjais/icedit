@@ -444,20 +444,6 @@ impl ShortcutManager {
             "Delete entire line (alternative)",
         ));
 
-        // Duplicate line operations
-
-        self.bind(KeyBinding::new(
-            Shortcut::ctrl(Key::Character('d')),
-            EditorMessage::Command("duplicate_line".to_string(), vec![]),
-            "Duplicate line",
-        ));
-
-        self.bind(KeyBinding::new(
-            Shortcut::ctrl_shift(Key::Character('d')),
-            EditorMessage::Command("duplicate_line".to_string(), vec![]),
-            "Duplicate line (alternative)",
-        ));
-
         // Selection operations
         self.bind(KeyBinding::new(
             Shortcut::ctrl(Key::Character('a')),
@@ -521,13 +507,6 @@ impl ShortcutManager {
             "Paste",
         ));
 
-        // Advanced clipboard
-        self.bind(KeyBinding::new(
-            Shortcut::ctrl_shift(Key::Character('v')),
-            EditorMessage::Command("paste_special".to_string(), vec![]),
-            "Paste special",
-        ));
-
         // Search and replace
         self.bind(KeyBinding::new(
             Shortcut::ctrl(Key::Character('f')),
@@ -551,76 +530,6 @@ impl ShortcutManager {
             Shortcut::ctrl(Key::Character('h')),
             EditorMessage::Replace("".to_string(), "".to_string()),
             "Replace",
-        ));
-
-        self.bind(KeyBinding::new(
-            Shortcut::ctrl(Key::Character('g')),
-            EditorMessage::Command("goto_line".to_string(), vec![]),
-            "Go to line",
-        ));
-
-        // Advanced search
-        self.bind(KeyBinding::new(
-            Shortcut::ctrl_shift(Key::Character('f')),
-            EditorMessage::Command("find_in_files".to_string(), vec![]),
-            "Find in files",
-        ));
-
-        self.bind(KeyBinding::new(
-            Shortcut::ctrl_shift(Key::Character('h')),
-            EditorMessage::Command("replace_in_files".to_string(), vec![]),
-            "Replace in files",
-        ));
-
-        // Indentation
-        self.bind(KeyBinding::new(
-            Shortcut::new(Key::Named(NamedKey::Tab), Modifiers::new()),
-            EditorMessage::Command("indent".to_string(), vec![]),
-            "Indent",
-        ));
-
-        self.bind(KeyBinding::new(
-            Shortcut::shift(Key::Named(NamedKey::Tab)),
-            EditorMessage::Command("unindent".to_string(), vec![]),
-            "Unindent",
-        ));
-
-        self.bind(KeyBinding::new(
-            Shortcut::ctrl(Key::Named(NamedKey::Tab)),
-            EditorMessage::Command("next_tab".to_string(), vec![]),
-            "Next tab",
-        ));
-
-        self.bind(KeyBinding::new(
-            Shortcut::ctrl_shift(Key::Named(NamedKey::Tab)),
-            EditorMessage::Command("previous_tab".to_string(), vec![]),
-            "Previous tab",
-        ));
-
-        // Comment operations
-        self.bind(KeyBinding::new(
-            Shortcut::ctrl(Key::Character('/')),
-            EditorMessage::Command("toggle_comment".to_string(), vec![]),
-            "Toggle line comment",
-        ));
-
-        self.bind(KeyBinding::new(
-            Shortcut::ctrl_shift(Key::Character('/')),
-            EditorMessage::Command("toggle_block_comment".to_string(), vec![]),
-            "Toggle block comment",
-        ));
-
-        // Formatting
-        self.bind(KeyBinding::new(
-            Shortcut::ctrl_shift(Key::Character('i')),
-            EditorMessage::Command("format_document".to_string(), vec![]),
-            "Format document",
-        ));
-
-        self.bind(KeyBinding::new(
-            Shortcut::ctrl(Key::Character('i')),
-            EditorMessage::Command("format_selection".to_string(), vec![]),
-            "Format selection",
         ));
 
         // macOS specific bindings
@@ -818,55 +727,10 @@ impl ShortcutManager {
                 EditorMessage::FindPrevious,
                 "Find previous (macOS)",
             ));
-
-            // macOS line operations
-            self.bind(KeyBinding::new(
-                Shortcut::new(Key::Character('d'), Modifiers::new().super_key()),
-                EditorMessage::Command("duplicate_line".to_string(), vec![]),
-                "Duplicate line (macOS)",
-            ));
-
-            self.bind(KeyBinding::new(
-                Shortcut::new(Key::Character('l'), Modifiers::new().super_key().shift()),
-                EditorMessage::DeleteLine,
-                "Delete entire line (macOS)",
-            ));
-
-            // macOS comment shortcuts
-            self.bind(KeyBinding::new(
-                Shortcut::new(Key::Character('/'), Modifiers::new().super_key()),
-                EditorMessage::Command("toggle_comment".to_string(), vec![]),
-                "Toggle line comment (macOS)",
-            ));
         }
 
         // Windows/Linux specific shortcuts (beyond the defaults)
         if !cfg!(target_os = "macos") {
-            // Windows-style shortcuts
-            self.bind(KeyBinding::new(
-                Shortcut::ctrl(Key::Character('n')),
-                EditorMessage::Command("new_file".to_string(), vec![]),
-                "New file",
-            ));
-
-            self.bind(KeyBinding::new(
-                Shortcut::ctrl(Key::Character('o')),
-                EditorMessage::Command("open_file".to_string(), vec![]),
-                "Open file",
-            ));
-
-            self.bind(KeyBinding::new(
-                Shortcut::ctrl(Key::Character('s')),
-                EditorMessage::Command("save_file".to_string(), vec![]),
-                "Save file",
-            ));
-
-            self.bind(KeyBinding::new(
-                Shortcut::ctrl_shift(Key::Character('s')),
-                EditorMessage::Command("save_as".to_string(), vec![]),
-                "Save as",
-            ));
-
             // Additional Windows/Linux specific shortcuts can be added here
         }
     }

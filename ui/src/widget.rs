@@ -420,13 +420,11 @@ impl<'a, Message> EditorWidget<'a, Message> {
     ) -> Option<EditorMessage> {
         // Convert iced key event to our key event format
         if let Some(key_event) = self.convert_key_event(key, modifiers) {
-            // Try to handle with shortcut manager
-            if let Some(message) = self.shortcut_manager.handle_key_event(key_event) {
-                return Some(message);
-            }
+            // Handle with shortcut manager - it already handles character input properly
+            self.shortcut_manager.handle_key_event(key_event)
+        } else {
+            None
         }
-
-        None
     }
 
     fn convert_key_event<T: AsRef<str>>(
@@ -452,6 +450,7 @@ impl<'a, Message> EditorWidget<'a, Message> {
                 iced::keyboard::key::Named::Delete => Key::Named(NamedKey::Delete),
                 iced::keyboard::key::Named::Enter => Key::Named(NamedKey::Enter),
                 iced::keyboard::key::Named::Tab => Key::Named(NamedKey::Tab),
+                iced::keyboard::key::Named::Space => Key::Named(NamedKey::Space),
                 iced::keyboard::key::Named::Home => Key::Named(NamedKey::Home),
                 iced::keyboard::key::Named::End => Key::Named(NamedKey::End),
                 iced::keyboard::key::Named::PageUp => Key::Named(NamedKey::PageUp),

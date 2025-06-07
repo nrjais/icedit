@@ -99,8 +99,6 @@ impl Editor {
             }
 
             EditorMessage::ScrollToLine(line) => self.handle_scroll_to_line(line),
-
-            EditorMessage::Command(_, _) => EditorResponse::Success,
         }
     }
 

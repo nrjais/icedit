@@ -60,6 +60,10 @@ mod tests {
         // Test undo
         let response = editor.handle_message(EditorMessage::Undo);
         assert!(matches!(response, EditorResponse::Success));
+
+        // Test redo
+        let response = editor.handle_message(EditorMessage::Redo);
+        assert!(matches!(response, EditorResponse::Success));
     }
 
     #[test]
@@ -67,24 +71,50 @@ mod tests {
         let mut editor = Editor::new();
 
         // Test character input
-        let response = editor.handle_key_input(KeyInput::Character('H'));
-        assert!(matches!(response, EditorResponse::TextChanged));
-
-        let response = editor.handle_key_input(KeyInput::Character('i'));
+        let response = editor.handle_key_input(KeyInput::Character('a'));
         assert!(matches!(response, EditorResponse::TextChanged));
 
         let content = editor.current_buffer().text();
-        assert_eq!(content, "Hi");
+        assert_eq!(content, "a");
 
-        // Test command input
-        let response = editor.handle_key_input(KeyInput::Command("left".to_string()));
-        assert!(matches!(response, EditorResponse::CursorMoved(_)));
-
-        // Insert another character to test cursor position
-        let response = editor.handle_key_input(KeyInput::Character('!'));
-        assert!(matches!(response, EditorResponse::TextChanged));
+        // Test backspace
+        let response = editor.handle_key_input(KeyInput::Command("backspace".to_string()));
+        assert!(matches!(response, EditorResponse::Success));
 
         let content = editor.current_buffer().text();
-        assert_eq!(content, "H!i");
+        assert_eq!(content, "");
+    }
+
+    #[test]
+    fn test_whitespace_and_tab_input() {
+        use crate::keys::{Key, KeyEvent, Modifiers, NamedKey};
+        use crate::shortcuts::ShortcutManager;
+
+        let shortcut_manager = ShortcutManager::new();
+
+        // Test space input
+        let space_event = KeyEvent::new(Key::Named(NamedKey::Space), Modifiers::new());
+        let result = shortcut_manager.handle_key_event(space_event);
+        assert!(matches!(result, Some(EditorMessage::InsertChar(' '))));
+
+        // Test tab input (should now insert tab, not indent)
+        let tab_event = KeyEvent::new(Key::Named(NamedKey::Tab), Modifiers::new());
+        let result = shortcut_manager.handle_key_event(tab_event);
+        assert!(matches!(result, Some(EditorMessage::InsertChar('\t'))));
+
+        // Test shift+tab (should still be unindent command)
+        let shift_tab_event = KeyEvent::new(Key::Named(NamedKey::Tab), Modifiers::new().shift());
+        let result = shortcut_manager.handle_key_event(shift_tab_event);
+        assert!(matches!(result, Some(EditorMessage::DeleteToLineStart)));
+
+        // Test regular character input
+        let char_event = KeyEvent::new(Key::Character('a'), Modifiers::new());
+        let result = shortcut_manager.handle_key_event(char_event);
+        assert!(matches!(result, Some(EditorMessage::InsertChar('a'))));
+
+        // Test character input with shift (should still work)
+        let shift_char_event = KeyEvent::new(Key::Character('A'), Modifiers::new().shift());
+        let result = shortcut_manager.handle_key_event(shift_char_event);
+        assert!(matches!(result, Some(EditorMessage::InsertChar('A'))));
     }
 }

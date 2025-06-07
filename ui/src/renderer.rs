@@ -750,7 +750,7 @@ impl EditorRenderer {
                 font: Font::MONOSPACE,
                 align_x: Alignment::Left,
                 align_y: iced::alignment::Vertical::Top,
-                shaping: iced::advanced::text::Shaping::Basic,
+                shaping: iced::advanced::text::Shaping::Advanced,
                 wrapping: iced::advanced::text::Wrapping::None,
             };
 
