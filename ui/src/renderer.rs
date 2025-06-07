@@ -1,4 +1,4 @@
-use crate::{PartialLineView, Viewport};
+use crate::{utils, PartialLineView, Viewport};
 use iced::{
     advanced::{
         renderer::Quad,
@@ -285,30 +285,16 @@ impl EditorRenderer {
 
         // Use cached content width if available and not dirty
         let content_width = if self.content_width_dirty || self.cached_max_line_width.is_none() {
-            let mut max_width: f32 = 0.0;
-            let mut max_line_idx = 0;
+            // Use the common utility function with increased limit for better accuracy
+            let max_width = utils::calculate_max_content_width(editor, self.char_width, 2000);
 
-            // Efficiently calculate max width by examining all visible lines plus some buffer
-            let lines_to_check = line_count.min(2000); // Increased limit for better accuracy
-
-            for line_idx in 0..lines_to_check {
-                if let Some(line) = rope.get_line(line_idx) {
-                    let line_str = line.to_string();
-                    let width = self.calculate_line_width(&line_str);
-                    if width > max_width {
-                        max_width = width;
-                        max_line_idx = line_idx;
-                    }
-                }
-            }
-
-            // Cache the results
-            self.cached_max_line_width = Some(max_width);
-            self.cached_max_line_index = Some(max_line_idx);
+            // Cache the result (without padding since the utility already adds it)
+            let max_width_without_padding = max_width - self.char_width * 2.0;
+            self.cached_max_line_width = Some(max_width_without_padding);
+            self.cached_max_line_index = Some(0); // We don't track line index in the utility
             self.content_width_dirty = false;
 
-            // Add some padding to content width to prevent clipping
-            max_width + self.char_width * 2.0
+            max_width
         } else {
             // Use cached value with padding
             self.cached_max_line_width.unwrap() + self.char_width * 2.0
@@ -319,17 +305,7 @@ impl EditorRenderer {
 
     /// Calculate the width of a line accounting for tabs
     fn calculate_line_width(&self, line: &str) -> f32 {
-        let mut width = 0.0;
-        for ch in line.chars() {
-            if ch == '\t' {
-                // Tab alignment to next tab stop
-                let tab_stop = ((width / self.tab_width).floor() + 1.0) * self.tab_width;
-                width = tab_stop;
-            } else if ch != '\n' {
-                width += self.char_width;
-            }
-        }
-        width
+        utils::calculate_line_width(line, self.char_width, self.tab_width)
     }
 
     /// Calculate scrollbar visibility and positions (lazy evaluation)
@@ -661,27 +637,7 @@ impl EditorRenderer {
 
     #[inline]
     fn calculate_x_position_fast(&self, column: usize, line_content: &str) -> f32 {
-        // Ultra-fast column position calculation with tab handling
-        let mut x = 0.0;
-        let mut char_count = 0;
-
-        for ch in line_content.chars() {
-            if char_count >= column {
-                break;
-            }
-
-            if ch == '\t' {
-                // Tab alignment to next tab stop
-                let tab_stop = ((x / self.tab_width).floor() + 1.0) * self.tab_width;
-                x = tab_stop;
-            } else {
-                x += self.char_width;
-            }
-
-            char_count += 1;
-        }
-
-        x
+        utils::calculate_column_x_position(column, line_content, self.char_width)
     }
 
     /// Calculate which columns are visible given horizontal scroll offset and viewport width

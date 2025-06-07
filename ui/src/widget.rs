@@ -1,4 +1,4 @@
-use crate::{renderer::EditorRenderer, Viewport};
+use crate::{renderer::EditorRenderer, utils, Viewport};
 use iced::{
     advanced::{
         layout::{self, Layout},
@@ -324,19 +324,7 @@ impl<'a, Message> EditorWidget<'a, Message> {
     /// Measure character dimensions for the given font size
     /// Uses improved calculations based on typical monospace font characteristics
     fn measure_char_dimensions(font_size: f32) -> (f32, f32) {
-        // For monospace fonts, character width is typically around 0.6 times font size
-        // This is more accurate than the previous hardcoded 8.0 value
-        let char_width = font_size * 0.6;
-
-        // Line height should be slightly larger than font size for readability
-        // 1.2-1.4 is typical, we use 1.3 as a good middle ground
-        let line_height = font_size * 1.3;
-
-        // Ensure minimum values to prevent layout issues
-        let char_width = char_width.max(1.0);
-        let line_height = line_height.max(font_size);
-
-        (char_width, line_height)
+        utils::calculate_char_dimensions(font_size)
     }
 
     /// Get the current character dimensions for use by the parent application
@@ -346,42 +334,7 @@ impl<'a, Message> EditorWidget<'a, Message> {
 
     /// Calculate the maximum content width for horizontal scroll limiting
     fn calculate_max_content_width(&self) -> f32 {
-        let rope = self.editor.current_buffer().rope();
-        let line_count = rope.len_lines();
-        let mut max_width: f32 = 0.0;
-
-        // Check up to 1000 lines for performance (can be adjusted based on needs)
-        let lines_to_check = line_count.min(1000);
-
-        for line_idx in 0..lines_to_check {
-            if let Some(line) = rope.get_line(line_idx) {
-                let line_str = line.to_string();
-                let width = self.calculate_line_width(&line_str);
-                if width > max_width {
-                    max_width = width;
-                }
-            }
-        }
-
-        // Add padding to prevent clipping
-        max_width + self.char_width * 2.0
-    }
-
-    /// Calculate the width of a line accounting for tabs
-    fn calculate_line_width(&self, line: &str) -> f32 {
-        let mut width = 0.0;
-        let tab_width = self.char_width * 4.0; // 4 spaces per tab
-
-        for ch in line.chars() {
-            if ch == '\t' {
-                // Tab alignment to next tab stop
-                let tab_stop = ((width / tab_width).floor() + 1.0) * tab_width;
-                width = tab_stop;
-            } else if ch != '\n' {
-                width += self.char_width;
-            }
-        }
-        width
+        utils::calculate_max_content_width(self.editor, self.char_width, 1000)
     }
 
     /// Convert screen point to editor position (line/column)
@@ -425,12 +378,12 @@ impl<'a, Message> EditorWidget<'a, Message> {
                 // Find the character position that's closest to the click
                 let mut current_x = 0.0;
                 let mut column = 0;
+                let tab_width = utils::get_tab_width(self.char_width);
 
                 for ch in line_str.chars() {
                     let char_width = if ch == '\t' {
                         // Calculate tab width
-                        let tab_stop = ((current_x / (self.char_width * 4.0)).floor() + 1.0)
-                            * (self.char_width * 4.0);
+                        let tab_stop = ((current_x / tab_width).floor() + 1.0) * tab_width;
                         tab_stop - current_x
                     } else {
                         self.char_width
@@ -641,16 +594,7 @@ pub fn editor_widget<'a, Message: 'a + Clone>(
 ///
 /// This ensures the editor's viewport calculations match the widget's text rendering.
 pub fn get_char_dimensions(font_size: f32) -> (f32, f32) {
-    // For monospace fonts, character width is typically around 0.6 times font size
-    let char_width = font_size * 0.6;
-    // Line height should be slightly larger than font size for readability
-    let line_height = font_size * 1.3;
-
-    // Ensure minimum values to prevent layout issues
-    let char_width = char_width.max(1.0);
-    let line_height = line_height.max(font_size);
-
-    (char_width, line_height)
+    utils::calculate_char_dimensions(font_size)
 }
 
 /// Convenience function to create a styled editor widget
