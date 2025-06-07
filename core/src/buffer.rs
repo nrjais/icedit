@@ -244,6 +244,144 @@ impl Buffer {
         Ok(deleted_text)
     }
 
+    /// Delete word forward (from cursor position to end of current word)
+    pub fn delete_word_forward(&mut self, cursor: &mut Cursor) -> Result<bool, BufferError> {
+        let current_pos = cursor.position();
+        let current_offset = current_pos.to_byte_offset(&self.rope);
+
+        if current_offset >= self.rope.len_bytes() {
+            return Ok(false);
+        }
+
+        self.save_state(current_pos);
+
+        let text = self.rope.slice(..);
+        let mut end_offset = current_offset;
+
+        // Skip current word (non-boundary characters)
+        while end_offset < self.rope.len_bytes() {
+            let ch = text.char(end_offset);
+            if crate::text_utils::is_word_boundary(ch) {
+                break;
+            }
+            end_offset += 1;
+        }
+
+        // Skip boundaries (whitespace and punctuation) until we find a word character or end
+        while end_offset < self.rope.len_bytes() {
+            let ch = text.char(end_offset);
+            if !crate::text_utils::is_word_boundary(ch) {
+                break;
+            }
+            end_offset += 1;
+        }
+
+        if end_offset > current_offset {
+            self.rope.remove(current_offset..end_offset);
+            self.is_modified = true;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Delete word backward (from cursor position to beginning of current word)
+    pub fn delete_word_backward(&mut self, cursor: &mut Cursor) -> Result<bool, BufferError> {
+        let current_pos = cursor.position();
+        let current_offset = current_pos.to_byte_offset(&self.rope);
+
+        if current_offset == 0 {
+            return Ok(false);
+        }
+
+        self.save_state(current_pos);
+
+        let text = self.rope.slice(..);
+        let mut start_offset = current_offset;
+
+        // Skip boundaries (whitespace and punctuation) backwards until we find a word character
+        while start_offset > 0 {
+            let ch = text.char(start_offset - 1);
+            if !crate::text_utils::is_word_boundary(ch) {
+                break;
+            }
+            start_offset -= 1;
+        }
+
+        // Skip word characters backwards to find the beginning of the word
+        while start_offset > 0 {
+            let ch = text.char(start_offset - 1);
+            if crate::text_utils::is_word_boundary(ch) {
+                break;
+            }
+            start_offset -= 1;
+        }
+
+        if start_offset < current_offset {
+            self.rope.remove(start_offset..current_offset);
+            self.is_modified = true;
+            // Move cursor to deletion point
+            cursor.set_position(Position::from_byte_offset(&self.rope, start_offset));
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Delete from cursor to end of line
+    pub fn delete_to_line_end(&mut self, cursor: &mut Cursor) -> Result<bool, BufferError> {
+        let current_pos = cursor.position();
+        let line = current_pos.line;
+
+        if line >= self.rope.len_lines() {
+            return Ok(false);
+        }
+
+        self.save_state(current_pos);
+
+        let _line_start = self.rope.line_to_byte(line);
+        let line_end = if line + 1 < self.rope.len_lines() {
+            self.rope.line_to_byte(line + 1) - 1 // Don't include the newline
+        } else {
+            self.rope.len_bytes()
+        };
+
+        let current_offset = current_pos.to_byte_offset(&self.rope);
+
+        if current_offset < line_end {
+            self.rope.remove(current_offset..line_end);
+            self.is_modified = true;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Delete from cursor to beginning of line
+    pub fn delete_to_line_start(&mut self, cursor: &mut Cursor) -> Result<bool, BufferError> {
+        let current_pos = cursor.position();
+        let line = current_pos.line;
+
+        if line >= self.rope.len_lines() {
+            return Ok(false);
+        }
+
+        self.save_state(current_pos);
+
+        let line_start = self.rope.line_to_byte(line);
+        let current_offset = current_pos.to_byte_offset(&self.rope);
+
+        if current_offset > line_start {
+            self.rope.remove(line_start..current_offset);
+            self.is_modified = true;
+            // Move cursor to beginning of line
+            cursor.set_position(Position::new(line, 0));
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
     /// Undo last operation
     pub fn undo(&mut self, cursor: &mut Cursor) -> Result<bool, BufferError> {
         if let Some(state) = self.undo_stack.pop() {

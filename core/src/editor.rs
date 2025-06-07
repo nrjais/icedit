@@ -65,6 +65,10 @@ impl Editor {
             EditorMessage::DeleteCharBackward => self.handle_delete_char_backward(),
             EditorMessage::DeleteLine => self.handle_delete_line(),
             EditorMessage::DeleteSelection => self.handle_delete_selection(),
+            EditorMessage::DeleteWordForward => self.handle_delete_word_forward(),
+            EditorMessage::DeleteWordBackward => self.handle_delete_word_backward(),
+            EditorMessage::DeleteToLineEnd => self.handle_delete_to_line_end(),
+            EditorMessage::DeleteToLineStart => self.handle_delete_to_line_start(),
 
             EditorMessage::MoveCursor(movement) => self.handle_cursor_movement(movement),
             EditorMessage::MoveCursorTo(position) => self.handle_move_cursor_to(position),
@@ -189,6 +193,74 @@ impl Editor {
             }
         } else {
             EditorResponse::Success
+        }
+    }
+
+    fn handle_delete_word_forward(&mut self) -> EditorResponse {
+        // If there's a selection, delete it instead of word
+        if let Some(selection) = self.selection.take() {
+            if !selection.is_empty() {
+                match self.buffer.delete_selection(&selection, &mut self.cursor) {
+                    Ok(_) => return EditorResponse::Success,
+                    Err(e) => return EditorResponse::Error(e.to_string()),
+                }
+            }
+        }
+
+        match self.buffer.delete_word_forward(&mut self.cursor) {
+            Ok(_) => EditorResponse::Success,
+            Err(e) => EditorResponse::Error(e.to_string()),
+        }
+    }
+
+    fn handle_delete_word_backward(&mut self) -> EditorResponse {
+        // If there's a selection, delete it instead of word
+        if let Some(selection) = self.selection.take() {
+            if !selection.is_empty() {
+                match self.buffer.delete_selection(&selection, &mut self.cursor) {
+                    Ok(_) => return EditorResponse::Success,
+                    Err(e) => return EditorResponse::Error(e.to_string()),
+                }
+            }
+        }
+
+        match self.buffer.delete_word_backward(&mut self.cursor) {
+            Ok(_) => EditorResponse::Success,
+            Err(e) => EditorResponse::Error(e.to_string()),
+        }
+    }
+
+    fn handle_delete_to_line_end(&mut self) -> EditorResponse {
+        // If there's a selection, delete it instead
+        if let Some(selection) = self.selection.take() {
+            if !selection.is_empty() {
+                match self.buffer.delete_selection(&selection, &mut self.cursor) {
+                    Ok(_) => return EditorResponse::Success,
+                    Err(e) => return EditorResponse::Error(e.to_string()),
+                }
+            }
+        }
+
+        match self.buffer.delete_to_line_end(&mut self.cursor) {
+            Ok(_) => EditorResponse::Success,
+            Err(e) => EditorResponse::Error(e.to_string()),
+        }
+    }
+
+    fn handle_delete_to_line_start(&mut self) -> EditorResponse {
+        // If there's a selection, delete it instead
+        if let Some(selection) = self.selection.take() {
+            if !selection.is_empty() {
+                match self.buffer.delete_selection(&selection, &mut self.cursor) {
+                    Ok(_) => return EditorResponse::Success,
+                    Err(e) => return EditorResponse::Error(e.to_string()),
+                }
+            }
+        }
+
+        match self.buffer.delete_to_line_start(&mut self.cursor) {
+            Ok(_) => EditorResponse::Success,
+            Err(e) => EditorResponse::Error(e.to_string()),
         }
     }
 

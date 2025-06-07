@@ -395,28 +395,56 @@ impl ShortcutManager {
         // Word deletion
         self.bind(KeyBinding::new(
             Shortcut::ctrl(Key::Named(NamedKey::Delete)),
-            EditorMessage::Command("delete_word_forward".to_string(), vec![]),
+            EditorMessage::DeleteWordForward,
             "Delete word forward",
         ));
 
         self.bind(KeyBinding::new(
             Shortcut::ctrl(Key::Named(NamedKey::Backspace)),
-            EditorMessage::Command("delete_word_backward".to_string(), vec![]),
+            EditorMessage::DeleteWordBackward,
             "Delete word backward",
         ));
 
-        // Line operations
+        // Advanced line deletion
         self.bind(KeyBinding::new(
-            Shortcut::ctrl(Key::Character('k')),
-            EditorMessage::DeleteLine,
-            "Delete line",
+            Shortcut::ctrl_shift(Key::Named(NamedKey::Delete)),
+            EditorMessage::DeleteToLineEnd,
+            "Delete to end of line",
         ));
 
         self.bind(KeyBinding::new(
+            Shortcut::ctrl_shift(Key::Named(NamedKey::Backspace)),
+            EditorMessage::DeleteToLineStart,
+            "Delete to start of line",
+        ));
+
+        // Alternative shortcuts for delete to line end (common in many editors)
+        self.bind(KeyBinding::new(
+            Shortcut::ctrl(Key::Character('k')),
+            EditorMessage::DeleteToLineEnd,
+            "Delete to end of line (alternative)",
+        ));
+
+        self.bind(KeyBinding::new(
+            Shortcut::ctrl(Key::Character('u')),
+            EditorMessage::DeleteToLineStart,
+            "Delete to start of line (alternative)",
+        ));
+
+        // Line operations (delete entire line)
+        self.bind(KeyBinding::new(
             Shortcut::ctrl_shift(Key::Character('k')),
             EditorMessage::DeleteLine,
-            "Delete line (Visual Studio style)",
+            "Delete entire line",
         ));
+
+        self.bind(KeyBinding::new(
+            Shortcut::ctrl_shift(Key::Character('l')),
+            EditorMessage::DeleteLine,
+            "Delete entire line (alternative)",
+        ));
+
+        // Duplicate line operations
 
         self.bind(KeyBinding::new(
             Shortcut::ctrl(Key::Character('d')),
@@ -734,14 +762,42 @@ impl ShortcutManager {
             // macOS word deletion with Option
             self.bind(KeyBinding::new(
                 Shortcut::alt(Key::Named(NamedKey::Delete)),
-                EditorMessage::Command("delete_word_forward".to_string(), vec![]),
+                EditorMessage::DeleteWordForward,
                 "Delete word forward (macOS)",
             ));
 
             self.bind(KeyBinding::new(
                 Shortcut::alt(Key::Named(NamedKey::Backspace)),
-                EditorMessage::Command("delete_word_backward".to_string(), vec![]),
+                EditorMessage::DeleteWordBackward,
                 "Delete word backward (macOS)",
+            ));
+
+            // macOS advanced deletion shortcuts
+            self.bind(KeyBinding::new(
+                Shortcut::new(Key::Character('k'), Modifiers::new().super_key()),
+                EditorMessage::DeleteToLineEnd,
+                "Delete to end of line (macOS)",
+            ));
+
+            self.bind(KeyBinding::new(
+                Shortcut::new(Key::Character('u'), Modifiers::new().super_key()),
+                EditorMessage::DeleteToLineStart,
+                "Delete to start of line (macOS)",
+            ));
+
+            self.bind(KeyBinding::new(
+                Shortcut::new(Key::Named(NamedKey::Delete), Modifiers::new().super_key()),
+                EditorMessage::DeleteToLineEnd,
+                "Delete to end of line with Cmd+Delete (macOS)",
+            ));
+
+            self.bind(KeyBinding::new(
+                Shortcut::new(
+                    Key::Named(NamedKey::Backspace),
+                    Modifiers::new().super_key(),
+                ),
+                EditorMessage::DeleteToLineStart,
+                "Delete to start of line with Cmd+Backspace (macOS)",
             ));
 
             // macOS specific search shortcuts
@@ -771,9 +827,9 @@ impl ShortcutManager {
             ));
 
             self.bind(KeyBinding::new(
-                Shortcut::new(Key::Character('k'), Modifiers::new().super_key()),
+                Shortcut::new(Key::Character('l'), Modifiers::new().super_key().shift()),
                 EditorMessage::DeleteLine,
-                "Delete line (macOS)",
+                "Delete entire line (macOS)",
             ));
 
             // macOS comment shortcuts

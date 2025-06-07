@@ -10,6 +10,10 @@ pub enum EditorMessage {
     DeleteCharBackward,
     DeleteLine,
     DeleteSelection,
+    DeleteWordForward,
+    DeleteWordBackward,
+    DeleteToLineEnd,
+    DeleteToLineStart,
 
     // Cursor movement
     MoveCursor(CursorMovement),
