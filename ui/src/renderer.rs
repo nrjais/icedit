@@ -195,7 +195,7 @@ impl EditorRenderer {
         if !needs_full_render && self.last_render_frame == self.frame_counter - 1 {
             // Only render cursor if it changed position
             if self.last_cursor_position.as_ref() != Some(&cursor_position) {
-                self.draw_cursor_only(renderer, bounds, cursor_position, viewport, editor);
+                self.draw_cursor(renderer, bounds, cursor_position, viewport, editor);
                 self.last_cursor_position = Some(cursor_position);
             }
             return;
@@ -286,7 +286,7 @@ impl EditorRenderer {
         self.render_text_batched(renderer, &text_ops);
 
         // Step 7: Draw cursor (on top of text)
-        self.draw_cursor_optimized(renderer, editor_bounds, cursor_position, viewport, editor);
+        self.draw_cursor(renderer, editor_bounds, cursor_position, viewport, editor);
 
         // Step 8: Draw scrollbars last (on top of everything)
         self.render_scrollbars(renderer, vertical_scrollbar, horizontal_scrollbar);
@@ -799,7 +799,7 @@ impl EditorRenderer {
         renderer.fill_quad(background_quad, self.background_color);
     }
 
-    fn draw_cursor_optimized<Renderer>(
+    fn draw_cursor<Renderer>(
         &self,
         renderer: &mut Renderer,
         bounds: Rectangle,
@@ -850,20 +850,6 @@ impl EditorRenderer {
 
             renderer.fill_quad(cursor_quad, self.cursor_color);
         }
-    }
-
-    fn draw_cursor_only<Renderer>(
-        &self,
-        renderer: &mut Renderer,
-        bounds: Rectangle,
-        cursor_position: Position,
-        viewport: &Viewport,
-        editor: &Editor,
-    ) where
-        Renderer: iced::advanced::Renderer,
-    {
-        // Optimized cursor-only rendering for when only cursor moved
-        self.draw_cursor_optimized(renderer, bounds, cursor_position, viewport, editor);
     }
 
     /// Draw the line number gutter (always enabled)

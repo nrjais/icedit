@@ -69,37 +69,95 @@ impl Viewport {
         let viewport_height = self.size.1;
         let line_height = self.line_height;
 
-        // Calculate the range of lines that intersect with the viewport
-        let first_line_top = (scroll_y / line_height).floor();
-        let last_line_bottom = ((scroll_y + viewport_height) / line_height).ceil();
+        // Early return if line height is invalid
+        if line_height <= 0.0 {
+            self.visible_lines = (0, 0);
+            self.partial_lines.clear();
+            return;
+        }
 
-        let start_line = first_line_top as usize;
-        let end_line = last_line_bottom as usize;
+        let viewport_top = scroll_y;
+        let viewport_bottom = scroll_y + viewport_height;
+
+        // Calculate the exact line indices that intersect with the viewport
+        let first_line_f = scroll_y / line_height;
+        let last_line_f = (scroll_y + viewport_height) / line_height;
+
+        let start_line = first_line_f.floor() as usize;
+        let end_line = last_line_f.ceil() as usize;
 
         self.visible_lines = (start_line, end_line);
-
-        // Calculate partial line information
         self.partial_lines.clear();
 
-        for line_idx in start_line..end_line {
+        // Optimization: Only process lines that actually need partial calculations
+        // Most lines are either fully visible or not visible at all
+
+        if start_line >= end_line {
+            return;
+        }
+
+        // Check first line - might be partially clipped at top
+        let first_line_y_top = start_line as f32 * line_height;
+        let first_line_y_bottom = first_line_y_top + line_height;
+
+        if first_line_y_bottom > viewport_top && first_line_y_top < viewport_bottom {
+            let y_offset = first_line_y_top - viewport_top;
+            let clip_top = if first_line_y_top < viewport_top {
+                viewport_top - first_line_y_top
+            } else {
+                0.0
+            };
+
+            let clip_bottom = if first_line_y_bottom > viewport_bottom {
+                first_line_y_bottom - viewport_bottom
+            } else {
+                0.0
+            };
+
+            let visible_height = line_height - clip_top - clip_bottom;
+            let visible_fraction = visible_height / line_height;
+
+            if visible_fraction > 0.0 {
+                self.partial_lines.push(PartialLineView {
+                    line_index: start_line,
+                    y_offset,
+                    visible_fraction,
+                    clip_top,
+                    clip_bottom,
+                });
+            }
+        }
+
+        // Add fully visible lines in between (if any)
+        for line_idx in (start_line + 1)..(end_line.saturating_sub(1)) {
             let line_y_top = line_idx as f32 * line_height;
-            let line_y_bottom = line_y_top + line_height;
-            let viewport_top = scroll_y;
-            let viewport_bottom = scroll_y + viewport_height;
+            let y_offset = line_y_top - viewport_top;
 
-            // Check if line intersects with viewport
-            if line_y_bottom > viewport_top && line_y_top < viewport_bottom {
-                let y_offset = line_y_top - viewport_top;
+            self.partial_lines.push(PartialLineView {
+                line_index: line_idx,
+                y_offset,
+                visible_fraction: 1.0, // Fully visible
+                clip_top: 0.0,
+                clip_bottom: 0.0,
+            });
+        }
 
-                // Calculate clipping
-                let clip_top = if line_y_top < viewport_top {
-                    viewport_top - line_y_top
+        // Check last line - might be partially clipped at bottom (if different from first line)
+        if end_line > start_line + 1 {
+            let last_line_idx = end_line - 1;
+            let last_line_y_top = last_line_idx as f32 * line_height;
+            let last_line_y_bottom = last_line_y_top + line_height;
+
+            if last_line_y_bottom > viewport_top && last_line_y_top < viewport_bottom {
+                let y_offset = last_line_y_top - viewport_top;
+                let clip_top = if last_line_y_top < viewport_top {
+                    viewport_top - last_line_y_top
                 } else {
                     0.0
                 };
 
-                let clip_bottom = if line_y_bottom > viewport_bottom {
-                    line_y_bottom - viewport_bottom
+                let clip_bottom = if last_line_y_bottom > viewport_bottom {
+                    last_line_y_bottom - viewport_bottom
                 } else {
                     0.0
                 };
@@ -107,10 +165,9 @@ impl Viewport {
                 let visible_height = line_height - clip_top - clip_bottom;
                 let visible_fraction = visible_height / line_height;
 
-                // Only consider lines that have some visible portion
                 if visible_fraction > 0.0 {
                     self.partial_lines.push(PartialLineView {
-                        line_index: line_idx,
+                        line_index: last_line_idx,
                         y_offset,
                         visible_fraction,
                         clip_top,
